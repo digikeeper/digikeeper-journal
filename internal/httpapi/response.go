@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"maps"
+
 	"github.com/danielgtaylor/huma/v2"
 )
 
@@ -31,7 +33,14 @@ type ErrorDetail struct {
 // default response content type.
 func NewHumaConfig(title, version string) huma.Config {
 	cfg := huma.DefaultConfig(title, version)
-	cfg.Formats[ContentType] = huma.DefaultJSONFormat
+
+	// Copy: DefaultConfig returns the shared DefaultFormats map, and writing to
+	// it races with the range over config.Formats in huma.NewAPI.
+	formats := make(map[string]huma.Format, len(cfg.Formats)+1)
+	maps.Copy(formats, cfg.Formats)
+	formats[ContentType] = huma.DefaultJSONFormat
+	cfg.Formats = formats
+
 	cfg.DefaultFormat = ContentType
 	return cfg
 }

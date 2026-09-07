@@ -8,40 +8,37 @@ They live in `internal/httpapi/schemaregistry` and are wired from `cmd/server`.
 Endpoints:
 
 - `GET /v1/registry` returns schema type summaries with their latest and available versions.
-- `GET /v1/registry/{type}` returns the latest schema for an record type.
-- `GET /v1/registry/{type}/{version}` returns one immutable schema version.
+- `GET /v1/registry/{type}/schema` returns the latest schema for a record type.
+- `GET /v1/registry/{type}/instruction` returns the latest type-instraction for a record type.
+- `GET /v1/registry/{type}/{version}/schema` && `GET /v1/registry/{type}/{version}/instruction` returns schema/instruiction by version
 
-Schemas are JSON files in `internal/httpapi/schemaregistry/schemas`. The handler embeds
+Schemas are JSON files in `internal/httpapi/schemaregistry/{type}`. The handler embeds
 and loads them at startup, retaining each schema as `json.RawMessage`.
 
-Schema filenames use this required format: `<type>_v<positive-integer>.json`
+Schema and Instruction files use this required path format: `{type}/v{version}/<schema.json|instructions.md>` 
 
 ```text
-schemas/note_v1.json  → type: note, version: 1
-schemas/note_v2.json  → type: note, version: 2
+note/v1/schema.json  → type: note, version: 1, file_type: json_schema
+note/v1/instructions.md  → type: note, version: 1, file_type: text, instructions and rules
+note/v2/schema.json  → type: note, version: 2, file_type: json_schema
+note/v2/instructions.md  → type: note, version: 2, file_type: text, instructions and rules
 ```
 
 
 ## Versioning Contract
 
 A schema identity is `(type, version)`. Published schema files are immutable == add a new
-file for a changed schema instead of modifying an existing version.
+file for a changed schema instead of modifying an existing version. A published `(type, version)` includes both files: json schema and instructions, and both are immutable once published.
 
-An record persists its schema version in `m.sv` (`m.v` is a legacy read-only alias for
-pre-existing JSONL entries). This identifies the exact registry schema needed to
-interpret that record; it never means "latest".
+A record persists its schema version in `m.sv`.
+This identifies the exact registry schema needed to interpret that record; it never means "latest".
 
-Record metadata also contains `m.r`, its logical revision:
-
-- a new record starts at revision `1`;
-- applying an approved candidate increments the revision;
-- a storage-only compaction rewrite does not increment it.
+Record metadata also contains `m.r`, its logical revision, it does not correlate directly with schema version.
 
 ## Why It Exists
 
-Clients need a stable way to discover supported record types and the schema version used
-by persisted entries. Serving schemas from the running service keeps clients aligned with
-the deployed version instead of relying only on external documentation.
+Clients need a stable way to discover supported record types and the schema version used by persisted records.
+Serving schemas from the running service keeps clients aligned with the deployed version instead of relying only on external documentation.
 
 ## Boundaries
 
@@ -50,3 +47,10 @@ through code review and deployment.
 
 The handler stays in `internal/httpapi` because it has no business workflow or mutable
 storage. If schemas become editable or user-specific, this package should be revised.
+
+## Instructions
+
+`instructions.md` describes how agents and clients should create, clarify, and refine records of this type.
+It may contain semantic guidance, examples, questions to ask, and Record Compaction rules.
+
+Instructions do not define whether a persisted record is structurally valid; `schema.json` does.

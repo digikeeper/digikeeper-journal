@@ -18,7 +18,7 @@ func TestPostThenGet(t *testing.T) {
 		`{"type":"note","timestamp":"2026-03-08T14:30:00Z","tags":["fitness","health"],"data":{"exercise":"running"}}`,
 		`{"type":"note","timestamp":"2026-03-08T14:29:00Z","tags":["health"],"data":{"exercise":"pre-running"}}`,
 	} {
-		postResp := postJSON(t, srv.URL+"/v1/logs", postBody)
+		postResp := postJSON(t, srv.URL+"/v1/journal", postBody)
 		defer closeResponseBody(t, postResp)
 		require.Equal(t, http.StatusCreated, postResp.StatusCode)
 
@@ -27,7 +27,7 @@ func TestPostThenGet(t *testing.T) {
 	}
 
 	// act GET
-	getResp := getURL(t, srv.URL+"/v1/logs?tag=fitness")
+	getResp := getURL(t, srv.URL+"/v1/journal?tag=fitness")
 	defer closeResponseBody(t, getResp)
 
 	require.Equal(t, http.StatusOK, getResp.StatusCode)
@@ -37,7 +37,7 @@ func TestPostThenGet(t *testing.T) {
 	var getResult listResponse
 	require.NoError(t, jsonx.UnmarshalRead(getResp.Body, &getResult))
 
-	assert.Equal(t, "logs", getResult.Meta.Type)
+	assert.Equal(t, "records", getResult.Meta.Type)
 	require.NotEmpty(t, getResult.Data)
 
 	var found *resourceObject
@@ -52,7 +52,7 @@ func TestPostThenGet(t *testing.T) {
 func TestCandidateResolveAndCompactFlow(t *testing.T) {
 	srv := setupTestServer(t)
 
-	appendResp := postJSON(t, srv.URL+"/v1/logs",
+	appendResp := postJSON(t, srv.URL+"/v1/journal",
 		`{"type":"note","timestamp":"2026-03-08T10:00:00Z","tags":["work"],"data":{"note":"original"}}`)
 	defer closeResponseBody(t, appendResp)
 	require.Equal(t, http.StatusCreated, appendResp.StatusCode)
@@ -97,7 +97,7 @@ func TestCandidateResolveAndCompactFlow(t *testing.T) {
 	defer closeResponseBody(t, compactResp)
 	require.Equal(t, http.StatusOK, compactResp.StatusCode)
 
-	queryResp := getURL(t, srv.URL+"/v1/logs?tag=corrected")
+	queryResp := getURL(t, srv.URL+"/v1/journal?tag=corrected")
 	defer closeResponseBody(t, queryResp)
 	require.Equal(t, http.StatusOK, queryResp.StatusCode)
 	var queried listResponse

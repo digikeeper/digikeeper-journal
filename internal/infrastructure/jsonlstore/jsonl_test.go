@@ -27,7 +27,7 @@ func march1At(hour int) time.Time {
 func setupWriter(t *testing.T) (*JSONLWriter, string) {
 	t.Helper()
 	dir := t.TempDir()
-	w := NewJSONLWriter(dir, "logs")
+	w := NewJSONLWriter(dir, "journal")
 	var relPath string
 	for _, e := range testRecords() {
 		rp, err := w.Append(e)
@@ -107,7 +107,7 @@ func TestRead_Filters(t *testing.T) {
 func TestRead_FileNotFound(t *testing.T) {
 	t.Parallel()
 
-	w := NewJSONLWriter(t.TempDir(), "logs")
+	w := NewJSONLWriter(t.TempDir(), "journal")
 	t.Cleanup(func() { closeWriter(t, w) })
 
 	records, err := w.Read("nonexistent/path.jsonl")
@@ -124,7 +124,7 @@ func TestRead_EmptyFile(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(fpath), 0o755))
 	require.NoError(t, os.WriteFile(fpath, nil, 0o644))
 
-	w := NewJSONLWriter(dir, "logs")
+	w := NewJSONLWriter(dir, "journal")
 	t.Cleanup(func() { closeWriter(t, w) })
 
 	records, err := w.Read(relPath)

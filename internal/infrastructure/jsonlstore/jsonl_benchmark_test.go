@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	benchBoolSink  bool
-	benchBytesSink []byte
+	benchBoolSink   bool
+	benchBytesSink  []byte
 	benchRecordSink core.Record
 )
 
@@ -25,7 +25,7 @@ type benchProfile struct {
 }
 
 type benchData struct {
-	record          core.Record
+	record         core.Record
 	line           []byte
 	filtersMatch   ReadFilters
 	filtersNoMatch ReadFilters
@@ -187,7 +187,7 @@ func buildBenchData(b *testing.B) benchData {
 
 	return benchData{
 		record: record,
-		line:  line,
+		line:   line,
 		filtersMatch: ReadFilters{
 			From: from,
 			To:   to,

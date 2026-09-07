@@ -16,7 +16,7 @@ func TestPostRecord(t *testing.T) {
 
 	body := `{"type":"note","timestamp":"2026-03-08T10:00:00Z","tags":["work"],"data":{"note":"test"}}`
 	// act
-	resp := postJSON(t, srv.URL+"/v1/logs", body)
+	resp := postJSON(t, srv.URL+"/v1/journal", body)
 	defer closeResponseBody(t, resp)
 
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
@@ -26,7 +26,7 @@ func TestPostRecord(t *testing.T) {
 	var got singleResponse
 	require.NoError(t, jsonx.UnmarshalRead(resp.Body, &got))
 
-	assert.Equal(t, "logs", got.Meta.Type)
+	assert.Equal(t, "records", got.Meta.Type)
 	assert.NotEmpty(t, got.Data.ID)
 	assert.Equal(t, "note", got.Data.Attributes.Type)
 	assert.Equal(t, "2026-03-08T10:00:00Z", got.Data.Attributes.Timestamp)
@@ -82,7 +82,7 @@ func TestAppendWithClientID(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req := newTestRequest(t, http.MethodPost, srv.URL+"/v1/logs", strings.NewReader(body))
+			req := newTestRequest(t, http.MethodPost, srv.URL+"/v1/journal", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			if tc.clientID != "" {
 				req.Header.Set("X-Client-Id", tc.clientID)
@@ -104,7 +104,7 @@ func TestAppendPassesRequestID(t *testing.T) {
 	srv := setupTestServer(t)
 
 	body := `{"type":"note","timestamp":"2026-03-08T10:00:00Z","tags":["work"],"data":{"note":"test"}}`
-	req := newTestRequest(t, http.MethodPost, srv.URL+"/v1/logs", strings.NewReader(body))
+	req := newTestRequest(t, http.MethodPost, srv.URL+"/v1/journal", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-ID", "test-req-123")
 
@@ -122,7 +122,7 @@ func TestAppendGeneratesRequestIDWhenMissing(t *testing.T) {
 	srv := setupTestServer(t)
 
 	body := `{"type":"note","timestamp":"2026-03-08T10:00:00Z","tags":["work"],"data":{"note":"test"}}`
-	resp := postJSON(t, srv.URL+"/v1/logs", body)
+	resp := postJSON(t, srv.URL+"/v1/journal", body)
 	defer closeResponseBody(t, resp)
 
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
@@ -148,10 +148,16 @@ func TestSchemaRegistryListSchemas(t *testing.T) {
 		} `json:"schemas"`
 	}
 	require.NoError(t, jsonx.UnmarshalRead(resp.Body, &got))
-	require.Len(t, got.Schemas, 1)
-	assert.Equal(t, "note", got.Schemas[0].Type)
+	require.Len(t, got.Schemas, 2)
+
+	// Types are served in sorted order.
+	assert.Equal(t, "health", got.Schemas[0].Type)
 	assert.Equal(t, 1, got.Schemas[0].LatestVersion)
 	assert.Equal(t, []int{1}, got.Schemas[0].Versions)
+
+	assert.Equal(t, "note", got.Schemas[1].Type)
+	assert.Equal(t, 1, got.Schemas[1].LatestVersion)
+	assert.Equal(t, []int{1}, got.Schemas[1].Versions)
 }
 
 func TestSchemaRegistryGetSchema(t *testing.T) {
@@ -163,13 +169,15 @@ func TestSchemaRegistryGetSchema(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var got struct {
-		Type    string `json:"type"`
-		Version int    `json:"version"`
-		Schema  any    `json:"schema"`
+		Type         string `json:"type"`
+		Version      int    `json:"version"`
+		Schema       any    `json:"schema"`
+		Instructions string `json:"instructions"`
 	}
 	require.NoError(t, jsonx.UnmarshalRead(resp.Body, &got))
 	assert.Equal(t, "note", got.Type)
 	assert.Equal(t, 1, got.Version)
+	assert.Contains(t, got.Instructions, "type: note")
 }
 
 func TestSchemaRegistryGetSchemaVersion(t *testing.T) {

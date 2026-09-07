@@ -70,14 +70,14 @@ func (h *Handler) AppendRecord(ctx context.Context, input *AppendInput) (*Append
 	case err == nil:
 		out := &AppendOutput{}
 		out.Status = 201
-		out.Body.Meta = httpapi.ResponseMeta{Type: "logs"}
+		out.Body.Meta = httpapi.ResponseMeta{Type: "records"}
 		out.Body.Data = httpapi.ToEnvelope(NewRecordResource(record, h.resolveSrc))
 		return out, nil
 
 	case errors.Is(err, errs.ErrIndexFailed):
 		out := &AppendOutput{}
 		out.Status = 202
-		out.Body.Meta = httpapi.ResponseMeta{Type: "logs"}
+		out.Body.Meta = httpapi.ResponseMeta{Type: "records"}
 		out.Body.Data = httpapi.ToEnvelope(NewRecordResource(record, h.resolveSrc))
 		return out, nil
 

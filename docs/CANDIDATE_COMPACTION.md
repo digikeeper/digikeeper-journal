@@ -3,7 +3,7 @@
 ## Short description
 
 This RFC adds a candidate-compaction layer on top of an append-only records store.
-A candidate is a proposed canonical version of an record. It is stored outside the main journal until it is approved, resolved and compacted.
+A candidate is a proposed canonical version of a record. It is stored outside the main journal until it is approved, resolved and compacted.
 Resolution is partition-wide: all pending candidates in one partition are decided together and split into applied and denied.
 Compaction materializes applied candidates into the journal partition by rewriting that partition.
 
@@ -12,7 +12,7 @@ This design is intentionally strict, small-scale, and file-based.
 ## Main entities
 
 Record -- canonical row stored in journal/{partition}.
-Candidate -- proposed canonical row for an record_id in a partition.
+Candidate -- proposed canonical row for a record_id in a partition.
 Candidate identity: partition, record_id, submitted_at, client_id
 Candidate states: pending; applied; denied.
 
@@ -29,7 +29,7 @@ Possible directory layout:
 - validate candidate shape
 - create candidates/pending/{partition} if needed
 - append candidate to candidates/pending/{partition}
-- if another pending candidate exists for the same record_id, still append and record duplicate
+- if another pending candidate exists for the same record_id, still append and log duplicate
 Limitations:
 - submit is blocked during resolve same partition
 - submit is allowed while candidates/applied/{partition} exists

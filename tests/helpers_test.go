@@ -47,13 +47,13 @@ type responseMeta struct {
 }
 
 type resourceObject struct {
-	ID         string     `json:"id"`
+	ID         string      `json:"id"`
 	Attributes recordAttrs `json:"attributes"`
 }
 
 type recordAttrs struct {
 	Type      string         `json:"type"`
-	Meta      recordMeta      `json:"meta"`
+	Meta      recordMeta     `json:"meta"`
 	RequestID string         `json:"request_id"`
 	CreatedAt string         `json:"created_at"`
 	Timestamp string         `json:"timestamp"`
@@ -83,14 +83,14 @@ type candidateResourceObject struct {
 }
 
 type candidateAttrs struct {
-	RecordID           string         `json:"record_id"`
-	OriginalTimestamp string         `json:"original_timestamp"`
+	RecordID          string          `json:"record_id"`
+	OriginalTimestamp string          `json:"original_timestamp"`
 	Record            candidateRecord `json:"record"`
-	CreatedAt         string         `json:"created_at"`
-	Action            string         `json:"action"`
-	ResolvedBy        string         `json:"resolved_by"`
-	Reason            string         `json:"reason"`
-	ClientID          string         `json:"client_id"`
+	CreatedAt         string          `json:"created_at"`
+	Action            string          `json:"action"`
+	ResolvedBy        string          `json:"resolved_by"`
+	Reason            string          `json:"reason"`
+	ClientID          string          `json:"client_id"`
 }
 
 type candidateRecord struct {
@@ -109,9 +109,9 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	require.NoError(t, err, "init index")
 	t.Cleanup(func() { _ = idx.Close() })
 
-	logStore, err := store.NewStore(dir, idx)
+	journalStore, err := store.NewStore(dir, idx)
 	require.NoError(t, err, "init store")
-	t.Cleanup(func() { _ = logStore.Close() })
+	t.Cleanup(func() { _ = journalStore.Close() })
 
 	candidateStore, err := candidatestore.New(dir)
 	require.NoError(t, err, "init candidate store")
@@ -123,9 +123,9 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	srcRepo, err := sourcerepo.New()
 	require.NoError(t, err, "init sources")
 
-	cmdSvc := command.NewService(logStore, srcRepo, logger)
-	candidateSvc := domainCandidate.NewService(candidateStore, logStore, logger)
-	compactionSvc := domainCompaction.NewService(logStore, candidateStore, idx, logger)
+	cmdSvc := command.NewService(journalStore, srcRepo, logger)
+	candidateSvc := domainCandidate.NewService(candidateStore, journalStore, logger)
+	compactionSvc := domainCompaction.NewService(journalStore, candidateStore, idx, logger)
 	qrySvc := query.NewService(qryStore, qryStore, logger)
 
 	cmdHandler := apicmd.NewHandler(cmdSvc, srcRepo.ResolveName)
@@ -136,21 +136,21 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	require.NoError(t, err, "init schema registry")
 
 	mux := http.NewServeMux()
-	api := humago.New(mux, httpapi.NewHumaConfig("Digikeeper Log", "1.0.0"))
+	api := humago.New(mux, httpapi.NewHumaConfig("Digikeeper Journal", "1.0.0"))
 	httpapi.InitHumaErrors()
 
 	huma.Register(api, huma.Operation{
-		OperationID:   "list-logs",
+		OperationID:   "list-records",
 		Method:        http.MethodGet,
-		Path:          "/v1/logs",
+		Path:          "/v1/journal",
 		Summary:       "Search records",
 		DefaultStatus: http.StatusOK,
 	}, qryHandler.QueryRecords)
 
 	huma.Register(api, huma.Operation{
-		OperationID:   "append-log",
+		OperationID:   "append-record",
 		Method:        http.MethodPost,
-		Path:          "/v1/logs",
+		Path:          "/v1/journal",
 		Summary:       "Append a record",
 		DefaultStatus: http.StatusCreated,
 	}, cmdHandler.AppendRecord)
@@ -179,7 +179,7 @@ func setupTestServer(t *testing.T) *httptest.Server {
 		OperationID:   "compact-partition",
 		Method:        http.MethodPost,
 		Path:          "/v1/compaction",
-		Summary:       "Compact applied candidates into a log partition",
+		Summary:       "Compact applied candidates into a record partition",
 		DefaultStatus: http.StatusOK,
 	}, compactionHandler.CompactPartition)
 	huma.Register(api, huma.Operation{
@@ -259,7 +259,7 @@ func closeResponseBody(t *testing.T, resp *http.Response) {
 
 func appendTestRecord(t *testing.T, srv *httptest.Server) string {
 	t.Helper()
-	resp := postJSON(t, srv.URL+"/v1/logs",
+	resp := postJSON(t, srv.URL+"/v1/journal",
 		`{"type":"note","timestamp":"2026-03-08T10:00:00Z","tags":["work"],"data":{"note":"original"}}`)
 	defer closeResponseBody(t, resp)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)

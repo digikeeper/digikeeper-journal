@@ -105,7 +105,7 @@ func run() error {
 
 	// API
 	mux := http.NewServeMux()
-	api := humago.New(mux, httpapi.NewHumaConfig("Digikeeper Log", "1.0.0"))
+	api := humago.New(mux, httpapi.NewHumaConfig("Digikeeper Journal", "1.0.0"))
 	httpapi.InitHumaErrors()
 
 	huma.Register(api, huma.Operation{

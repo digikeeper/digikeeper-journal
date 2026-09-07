@@ -9,7 +9,7 @@ The mutex and locks of data changes is based on flock -- prevents concurrency on
 ## CQS
 Logic of service organically divided into command and query.
 - **Command** (`internal/domain/command`): state-changing operations, such as JSONL append + SQLite index update.
-- **Query** (`internal/domain/query`): retrieval operations that may reorganize data for response, such as SQLite selecting matching JSONL files → JSONL scan + entry-level filtering.
+- **Query** (`internal/domain/query`): retrieval operations that may reorganize data for response, such as SQLite selecting matching JSONL files → JSONL scan + record-level filtering.
 
 Currently synchronous. The command storage boundary is compatible with future async indexing.
 
@@ -45,7 +45,7 @@ Each package maps one technical capability to the domain interfaces that use it.
 |----------------|------|
 | `commandstore` | Write path: JSONL append + index update |
 | `querystore`   | Read path: matching file lookup → JSONL scan |
-| `index`        | Finds JSONL files that may contain matching entries |
+| `index`        | Finds JSONL files that may contain matching records |
 | `jsonlstore`   | Raw JSONL file I/O |
 | `sourcerepo`   | Source-ID ↔ name resolution |
 

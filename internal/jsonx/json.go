@@ -1,4 +1,4 @@
-// Package jsonx centralizes use of experimental encoding/json/v2 and repository JSON policy.
+// Package jsonx centralizes use of encoding/json/v2 and repository JSON policy.
 package jsonx
 
 import (

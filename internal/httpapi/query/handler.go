@@ -87,7 +87,7 @@ func (h *Handler) QueryRecords(ctx context.Context, input *QueryInput) (*QueryOu
 	}
 
 	out := &QueryOutput{}
-	out.Body.Meta = httpapi.ResponseMeta{Type: "logs"}
+	out.Body.Meta = httpapi.ResponseMeta{Type: "records"}
 	out.Body.Data = make([]httpapi.ResourceEnvelope, len(results))
 	for i, e := range results {
 		out.Body.Data[i] = httpapi.ToEnvelope(NewRecordResource(e, h.resolveSrc))
