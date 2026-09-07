@@ -3,7 +3,7 @@
   "properties": {
     "type": {
       "type": "string",
-      "description": "Entry type identifying the kind of event"
+      "description": "Record type identifying the kind of event"
     },
     "timestamp": {
       "type": "string",
@@ -14,7 +14,7 @@
     "created_at": {
       "type": "string",
       "format": "date-time",
-      "description": "When the entry was recorded by the server"
+      "description": "When the record was created by the server"
     },
     "request_id": {
       "type": "string",
@@ -25,12 +25,12 @@
       "items": {
         "type": "string"
       },
-      "description": "Categories/labels for filtering and grouping entries"
+      "description": "Categories/labels for filtering and grouping records"
     },
     "meta": {
       "type": "object",
       "x-alias": "m",
-      "description": "System-managed entry metadata, set automatically on creation",
+      "description": "System-managed record metadata, set automatically on creation",
       "properties": {
         "schema_version": {
           "type": "integer",
@@ -40,12 +40,12 @@
         "revision": {
           "type": "integer",
           "x-alias": "r",
-          "description": "Logical entry revision; increments when an approved candidate replaces the entry"
+          "description": "Logical record revision; increments when an approved candidate replaces the record"
         },
         "source": {
           "type": ["integer", "string"],
           "x-alias": "s",
-          "description": "Client that produced this entry; stored as numeric ID, resolved to name in API responses"
+          "description": "Client that produced this record; stored as numeric ID, resolved to name in API responses"
         }
       }
     },

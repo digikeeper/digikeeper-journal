@@ -12,13 +12,21 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-//go:embed schemas/*.json
+//go:embed all:*/v*/schema.json all:*/v*/instructions.md
 var schemasFS embed.FS
 
+// schemaDoc is one {type}/v{version} directory: the JSON Schema plus its
+// human-readable instructions.
+type schemaDoc struct {
+	schema       json.RawMessage
+	instructions string
+}
+
 type SchemaEntry struct {
-	Type       string          `json:"type"`
-	Version    int             `json:"version"`
-	JSONSchema json.RawMessage `json:"schema"`
+	Type         string          `json:"type"`
+	Version      int             `json:"version"`
+	JSONSchema   json.RawMessage `json:"schema"`
+	Instructions string          `json:"instructions,omitempty"`
 }
 
 type SchemaSummary struct {
@@ -28,40 +36,66 @@ type SchemaSummary struct {
 }
 
 type Handler struct {
-	schemas map[string]map[int]json.RawMessage
+	schemas map[string]map[int]schemaDoc
 	order   []string
 }
 
+// NewHandler loads every embedded schema. Layout is {type}/v{version}/, so the
+// type and version come from the path rather than being encoded in filenames.
 func NewHandler() (*Handler, error) {
-	entries, err := schemasFS.ReadDir("schemas")
+	types, err := schemasFS.ReadDir(".")
 	if err != nil {
 		return nil, fmt.Errorf("schemaregistry: read embedded schemas: %w", err)
 	}
 
-	schemas := make(map[string]map[int]json.RawMessage, len(entries))
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+	schemas := make(map[string]map[int]schemaDoc, len(types))
+	for _, typeDir := range types {
+		if !typeDir.IsDir() {
 			continue
 		}
+		typeName := typeDir.Name()
 
-		typeName, version, err := parseSchemaFilename(e.Name())
+		versionDirs, err := schemasFS.ReadDir(typeName)
 		if err != nil {
-			return nil, err
-		}
-		data, err := schemasFS.ReadFile("schemas/" + e.Name())
-		if err != nil {
-			return nil, fmt.Errorf("schemaregistry: read %s: %w", e.Name(), err)
+			return nil, fmt.Errorf("schemaregistry: read %s: %w", typeName, err)
 		}
 
-		versions := schemas[typeName]
-		if versions == nil {
-			versions = make(map[int]json.RawMessage)
-			schemas[typeName] = versions
+		for _, versionDir := range versionDirs {
+			if !versionDir.IsDir() {
+				continue
+			}
+			version, err := parseVersionDir(typeName, versionDir.Name())
+			if err != nil {
+				return nil, err
+			}
+
+			dir := typeName + "/" + versionDir.Name()
+			schema, err := schemasFS.ReadFile(dir + "/schema.json")
+			if err != nil {
+				return nil, fmt.Errorf("schemaregistry: read %s/schema.json: %w", dir, err)
+			}
+			if !json.Valid(schema) {
+				return nil, fmt.Errorf("schemaregistry: %s/schema.json is not valid JSON", dir)
+			}
+			// Instructions are optional; a schema without prose still serves.
+			instructions, err := schemasFS.ReadFile(dir + "/instructions.md")
+			if err != nil {
+				instructions = nil
+			}
+
+			versions := schemas[typeName]
+			if versions == nil {
+				versions = make(map[int]schemaDoc)
+				schemas[typeName] = versions
+			}
+			if _, exists := versions[version]; exists {
+				return nil, fmt.Errorf("schemaregistry: duplicate schema %s version %d", typeName, version)
+			}
+			versions[version] = schemaDoc{
+				schema:       json.RawMessage(schema),
+				instructions: string(instructions),
+			}
 		}
-		if _, exists := versions[version]; exists {
-			return nil, fmt.Errorf("schemaregistry: duplicate schema %s version %d", typeName, version)
-		}
-		versions[version] = json.RawMessage(data)
 	}
 
 	order := make([]string, 0, len(schemas))
@@ -73,24 +107,16 @@ func NewHandler() (*Handler, error) {
 	return &Handler{schemas: schemas, order: order}, nil
 }
 
-func parseSchemaFilename(name string) (string, int, error) {
-	stem := strings.TrimSuffix(name, ".json")
-	idx := strings.LastIndex(stem, "_v")
-	if idx <= 0 || idx == len(stem)-2 {
-		return "", 0, fmt.Errorf(
-			"schemaregistry: invalid schema filename %q: expected <type>_v<positive-integer>.json",
-			name,
+// parseVersionDir turns a "v3" directory name into 3.
+func parseVersionDir(typeName, name string) (int, error) {
+	version, err := strconv.Atoi(strings.TrimPrefix(name, "v"))
+	if !strings.HasPrefix(name, "v") || err != nil || version < 1 {
+		return 0, fmt.Errorf(
+			"schemaregistry: invalid version directory %q in %q: expected v<positive-integer>",
+			name, typeName,
 		)
 	}
-
-	version, err := strconv.Atoi(stem[idx+2:])
-	if err != nil || version < 1 {
-		return "", 0, fmt.Errorf(
-			"schemaregistry: invalid schema filename %q: expected <type>_v<positive-integer>.json",
-			name,
-		)
-	}
-	return stem[:idx], version, nil
+	return version, nil
 }
 
 type ListOutput struct {
@@ -139,13 +165,18 @@ func (h *Handler) GetSchemaVersion(_ context.Context, input *GetVersionInput) (*
 }
 
 func (h *Handler) getSchema(typeName string, version int) (*GetOutput, error) {
-	raw, ok := h.schemas[typeName][version]
+	doc, ok := h.schemas[typeName][version]
 	if !ok {
 		return nil, huma.Error404NotFound(fmt.Sprintf("schema not found: %s version %d", typeName, version))
 	}
 
 	out := &GetOutput{}
-	out.Body = SchemaEntry{Type: typeName, Version: version, JSONSchema: raw}
+	out.Body = SchemaEntry{
+		Type:         typeName,
+		Version:      version,
+		JSONSchema:   doc.schema,
+		Instructions: doc.instructions,
+	}
 	return out, nil
 }
 

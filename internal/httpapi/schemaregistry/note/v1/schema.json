@@ -1,0 +1,60 @@
+{
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "description": "Record type identifying the kind of event"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "x-alias": "ts",
+      "description": "When the event originally occurred"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the record was created by the server"
+    },
+    "request_id": {
+      "type": "string",
+      "description": "Correlation ID of the originating HTTP/etc request"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Categories/labels for filtering and grouping records"
+    },
+    "meta": {
+      "type": "object",
+      "x-alias": "m",
+      "description": "System-managed record metadata, set automatically on creation",
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "x-alias": "sv",
+          "description": "Immutable schema version"
+        },
+        "revision": {
+          "type": "integer",
+          "x-alias": "r",
+          "description": "Logical record revision; increments when an approved candidate replaces the record"
+        },
+        "source": {
+          "type": ["integer", "string"],
+          "x-alias": "s",
+          "description": "Client that produced this record; stored as numeric ID, resolved to name in API responses"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": true,
+      "x-alias": "d",
+      "description": "Client-supplied payload capturing the details of the event"
+    }
+  },
+  "required": ["timestamp", "tags", "data"]
+}
