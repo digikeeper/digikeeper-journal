@@ -8,6 +8,19 @@ import (
 
 const ContentType = "application/vnd.api+json"
 
+// RequestIDHeader carries the correlation id accepted from the client
+const RequestIDHeader = "X-Request-ID"
+
+// RequestIDParam documents RequestIDHeader as an optional header parameter.
+func RequestIDParam() *huma.Param {
+	return &huma.Param{
+		Name:        RequestIDHeader,
+		In:          "header",
+		Description: "Correlation id for the request. Generated when omitted and echoed back on the response.",
+		Schema:      &huma.Schema{Type: "string"},
+	}
+}
+
 // Resource represents a JSON:API resource object with id and attributes.
 type Resource interface {
 	GetID() string

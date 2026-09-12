@@ -204,7 +204,7 @@ func setupTestServer(t *testing.T) *httptest.Server {
 		DefaultStatus: http.StatusOK,
 	}, sregHandler.GetSchemaVersion)
 
-	sloghttp.RequestIDHeaderKey = "X-Request-ID"
+	sloghttp.RequestIDHeaderKey = httpapi.RequestIDHeader
 	handler := sloghttp.NewWithConfig(logger, sloghttp.Config{
 		WithRequestID: true,
 	})(mux)

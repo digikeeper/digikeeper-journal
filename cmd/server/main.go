@@ -5,22 +5,16 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	_ "net/http/pprof" // /debug/pprof/* and /debug/vars
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 	"time"
 
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	sloghttp "github.com/samber/slog-http"
-
 	command "github.com/digikeeper/digikeeper-journal/internal/domain/command/append"
 	domainCandidate "github.com/digikeeper/digikeeper-journal/internal/domain/command/candidate"
 	domainCompaction "github.com/digikeeper/digikeeper-journal/internal/domain/command/compaction"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/query"
-	"github.com/digikeeper/digikeeper-journal/internal/httpapi"
 	apicmd "github.com/digikeeper/digikeeper-journal/internal/httpapi/command"
 	apiqry "github.com/digikeeper/digikeeper-journal/internal/httpapi/query"
 	apisreg "github.com/digikeeper/digikeeper-journal/internal/httpapi/schemaregistry"
@@ -29,8 +23,6 @@ import (
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/index"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/querystore"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/sourcerepo"
-	"github.com/digikeeper/digikeeper-journal/pkg/chain"
-	"github.com/digikeeper/digikeeper-journal/pkg/healthz"
 )
 
 func main() {
@@ -104,89 +96,15 @@ func run() error {
 	}
 
 	// API
-	mux := http.NewServeMux()
-	api := humago.New(mux, httpapi.NewHumaConfig("Digikeeper Journal", "1.0.0"))
-	httpapi.InitHumaErrors()
+	handler := newHTTPHandler(cfg, logger, handlers{
+		Command:    cmdHandler,
+		Candidate:  candidateHandler,
+		Compaction: compactionHandler,
+		Query:      qryHandler,
+		Schema:     sregHandler,
+	})
 
-	huma.Register(api, huma.Operation{
-		OperationID:   "list-records",
-		Method:        http.MethodGet,
-		Path:          "/v1/journal",
-		Summary:       "Search records",
-		DefaultStatus: http.StatusOK,
-	}, qryHandler.QueryRecords)
-	huma.Register(api, huma.Operation{
-		OperationID:   "append-record",
-		Method:        http.MethodPost,
-		Path:          "/v1/journal",
-		Summary:       "Append a record",
-		DefaultStatus: http.StatusCreated,
-	}, cmdHandler.AppendRecord)
-	huma.Register(api, huma.Operation{
-		OperationID:   "submit-candidate",
-		Method:        http.MethodPost,
-		Path:          "/v1/candidates",
-		Summary:       "Submit a candidate replacement",
-		DefaultStatus: http.StatusCreated,
-	}, candidateHandler.SubmitCandidate)
-	huma.Register(api, huma.Operation{
-		OperationID:   "list-pending-candidates",
-		Method:        http.MethodGet,
-		Path:          "/v1/candidates/pending",
-		Summary:       "List pending candidates",
-		DefaultStatus: http.StatusOK,
-	}, candidateHandler.ListPendingCandidates)
-	huma.Register(api, huma.Operation{
-		OperationID:   "resolve-candidates",
-		Method:        http.MethodPost,
-		Path:          "/v1/candidates/resolve",
-		Summary:       "Resolve pending candidates for a partition",
-		DefaultStatus: http.StatusOK,
-	}, candidateHandler.ResolveCandidates)
-	huma.Register(api, huma.Operation{
-		OperationID:   "compact-partition",
-		Method:        http.MethodPost,
-		Path:          "/v1/compaction",
-		Summary:       "Compact applied candidates into a record partition",
-		DefaultStatus: http.StatusOK,
-	}, compactionHandler.CompactPartition)
-	huma.Register(api, huma.Operation{
-		OperationID:   "list-schemas",
-		Method:        http.MethodGet,
-		Path:          "/v1/registry",
-		Summary:       "List all record type schemas",
-		DefaultStatus: http.StatusOK,
-	}, sregHandler.ListSchemas)
-	huma.Register(api, huma.Operation{
-		OperationID:   "get-schema",
-		Method:        http.MethodGet,
-		Path:          "/v1/registry/{type}",
-		Summary:       "Get the latest schema for a record type",
-		DefaultStatus: http.StatusOK,
-	}, sregHandler.GetSchema)
-	huma.Register(api, huma.Operation{
-		OperationID:   "get-schema-version",
-		Method:        http.MethodGet,
-		Path:          "/v1/registry/{type}/{version}",
-		Summary:       "Get an immutable schema version for a record type",
-		DefaultStatus: http.StatusOK,
-	}, sregHandler.GetSchemaVersion)
-
-	mux.HandleFunc("GET /healthz", healthz.Handle)
-	if cfg.Debug.Enabled {
-		mux.Handle("/debug/", http.DefaultServeMux)
-		logger.Info("debug endpoints enabled", slog.String("path", "/debug/"))
-	}
-
-	sloghttp.RequestIDHeaderKey = "X-Request-ID"
-	handler := chain.New(
-		httpapi.Recovery,
-		sloghttp.NewWithConfig(logger, sloghttp.Config{
-			WithRequestID: true,
-		}),
-	).Then(mux)
-
-	addr := fmt.Sprintf("%s:%s", cfg.API.LocalHost, cfg.API.LocalPort)
+	addr := fmt.Sprintf("%s:%s", cfg.API.Host, cfg.API.Port)
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      handler,

@@ -28,7 +28,8 @@ note/v2/instructions.md  → type: note, version: 2, file_type: text, instructio
 ## Versioning Contract
 
 A schema identity is `(type, version)`. Published schema files are immutable == add a new
-file for a changed schema instead of modifying an existing version. A published `(type, version)` includes both files: json schema and instructions, and both are immutable once published.
+file for a changed schema instead of modifying an existing version.
+A published `(type, version)` includes both files: json schema and instructions, and both are immutable once published.
 
 A record persists its schema version in `m.sv`.
 This identifies the exact registry schema needed to interpret that record; it never means "latest".

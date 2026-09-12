@@ -15,9 +15,9 @@ type CommonConfig struct {
 }
 
 type APIConfig struct {
-	Timeout   time.Duration `env:"TIMEOUT" env-default:"5s"`
-	LocalPort string        `env:"LOCAL_PORT" env-default:"9000"`
-	LocalHost string        `env:"LOCAL_HOST" env-required:"true"`
+	Timeout time.Duration `env:"TIMEOUT" env-default:"5s"`
+	Port    string        `env:"PORT" env-default:"9000"`
+	Host    string        `env:"HOST" env-required:"true"`
 }
 
 type JournalStorageConfig struct {
