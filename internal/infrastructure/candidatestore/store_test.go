@@ -31,7 +31,7 @@ func TestStoreCandidateLifecycle(t *testing.T) {
 		require.Len(t, pending, 1)
 		assert.Equal(t, candidate.ID, pending[0].ID)
 
-		candidate.Action = core.Apply
+		candidate.Action = commandmodel.ApplyResolution
 		candidate.ResolvedBy = "tester"
 		candidate.ResolvedAt = time.Now().UTC()
 		require.NoError(t, store.MoveCandidates(ctx, tx, partition, []commandmodel.Candidate{candidate}, nil))
@@ -61,11 +61,11 @@ func TestStoreMoveCandidatesAppliedConflict(t *testing.T) {
 
 		partition := testPartition(t)
 		first := testCandidate("candidate-a", "record-a")
-		first.Action = core.Apply
+		first.Action = commandmodel.ApplyResolution
 		require.NoError(t, store.MoveCandidates(ctx, tx, partition, []commandmodel.Candidate{first}, nil))
 
 		second := testCandidate("candidate-b", "record-b")
-		second.Action = core.Apply
+		second.Action = commandmodel.ApplyResolution
 		err := store.MoveCandidates(ctx, tx, partition, []commandmodel.Candidate{second}, nil)
 		require.True(t, errors.Is(err, errs.ErrConflict))
 	})

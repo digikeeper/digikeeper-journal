@@ -98,7 +98,7 @@ Each package maps one technical capability to the domain interfaces that use it.
 
 Domain enums drive storage names:
 - `core.CandidateStates()` lists the states a candidate can be in, and `storefs` maps each to a directory.
-- `core.CandidateResolution.EndState()` says where a resolved candidate comes to rest. A state added to the domain without a directory fails a test instead of silently writing candidates nowhere. The mapping is spelled out rather than derived from the constant's string, so renaming a domain constant cannot silently move data on disk.
+- `command/model.CandidateResolution.EndState()` says where a resolved candidate comes to rest. A state added to the domain without a directory fails a test instead of silently writing candidates nowhere. The mapping is spelled out rather than derived from the constant's string, so renaming a domain constant cannot silently move data on disk.
 
 ## Observability
 - RequestID in every JSONL record + `X-Request-ID` header

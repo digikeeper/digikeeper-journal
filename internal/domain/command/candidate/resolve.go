@@ -69,7 +69,7 @@ func (s *Service) Resolve(
 			c.Reason = item.Reason
 			c.ClientID = req.ClientID
 
-			if item.Action == core.Apply {
+			if item.Action == model.ApplyResolution {
 				applied = append(applied, *c)
 			} else {
 				denied = append(denied, *c)
@@ -115,7 +115,7 @@ func validateAllAtOnce(pending []model.Candidate, resolutions []ResolveItem) err
 	applyByRecordCounts := make(map[string]int)
 	for _, c := range pending {
 		item := resolutionsByID[c.ID]
-		if item.Action == core.Apply {
+		if item.Action == model.ApplyResolution {
 			applyByRecordCounts[c.RecordID]++
 		}
 	}
