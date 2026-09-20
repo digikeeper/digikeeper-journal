@@ -42,7 +42,7 @@ func TestStoreReadRecord(t *testing.T) {
 
 	dd, err := storefs.Open(t.TempDir())
 	require.NoError(t, err)
-	idx, err := index.New(dd.IndexPath(), index.Config{})
+	idx, err := index.NewIdx(dd.IndexPath(), index.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = idx.Close() })
 

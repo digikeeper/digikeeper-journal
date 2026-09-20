@@ -8,6 +8,7 @@ import (
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 )
+
 type Storage interface {
 	// WithShared is sufficient for reading operations.
 	WithShared(ctx context.Context, fn func(tx storefs.Tx) error) error

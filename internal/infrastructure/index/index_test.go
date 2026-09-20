@@ -176,7 +176,7 @@ func TestStoreRebuildPartitionEmptyDeletesRow(t *testing.T) {
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 
-	store, err := New(filepath.Join(t.TempDir(), "index.db"), Config{})
+	store, err := NewIdx(filepath.Join(t.TempDir(), "index.db"), Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	return store

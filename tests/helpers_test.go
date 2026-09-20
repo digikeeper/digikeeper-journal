@@ -106,7 +106,7 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	dir, err := storefs.Open(t.TempDir())
 	require.NoError(t, err, "open data dir")
 
-	idx, err := index.New(dir.IndexPath(), index.Config{})
+	idx, err := index.NewIdx(dir.IndexPath(), index.Config{})
 	require.NoError(t, err, "init index")
 	t.Cleanup(func() { _ = idx.Close() })
 
