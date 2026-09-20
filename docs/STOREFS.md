@@ -22,7 +22,9 @@ Nothing broke while every copy agreed — but a rename in the write path would h
 | `WithShared(ctx, fn)` / `WithExclusive(ctx, fn)` | run `fn` under the directory's shared / exclusive lock, yielding a `Tx` / `WriteTx` (see [ARCHITECTURE.md § Locking](ARCHITECTURE.md#locking)) |
 | `Tx` / `WriteTx` | proof the lock is held, and the capability to read / rewrite. Closed interfaces: only this package can produce one, so a store method taking one cannot be called without the lock |
 | `Check(tx)` | the residual runtime check — that `tx` is live and belongs to *this* directory |
-| `Files()` | every record file, directory-relative and sorted |
+| `ListFiles()` | every record file, directory-relative and sorted |
+| `ReplaceFile(tx, rel, write)` | atomically replace a root-relative file under an exclusive transaction, via a `.replace.tmp` temporary |
+| `ListTemps()` / `RemoveTemps()` | find / delete compaction and replacement temporaries a crash left behind |
 | `JournalDir` / `CandidatesDir` / `SchemaDir` | the three trees `Open` creates |
 | `JournalPath` / `CandidatePath` / `AuditPath` / `IndexPath` / `ServerLockPath` | addressing by partition and state |
 | `Resolve(rel)` | widens a relative key to an absolute path, refusing anything that escapes |
@@ -31,9 +33,9 @@ Nothing broke while every copy agreed — but a rename in the write path would h
 
 ## Technical decisions
 
-- **`os.Root`, not `os.DirFS`.** `DirFS` follows a symlink out of the tree; a `Root` refuses to. `Files()` walks the rooted FS for the same reason.
+- **`os.Root`, not `os.DirFS`.** `DirFS` follows a symlink out of the tree; a `Root` refuses to. `ListFiles()` walks the rooted FS for the same reason.
 
-- **`Resolve` returns an error.** Relative names are not always ours — a future restore path would read them from a remote manifest — so it rejects anything failing `fs.ValidPath`.
+- **`Resolve` returns an error.** Relative names are not always ours — restore reads them from a remote manifest — so it rejects anything failing `fs.ValidPath`.
 
 ## Domain enums drive the names
 

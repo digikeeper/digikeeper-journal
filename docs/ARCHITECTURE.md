@@ -92,6 +92,7 @@ Each package maps one technical capability to the domain interfaces that use it.
 | `commandstore` | Write path: JSONL append + index update |
 | `querystore`   | Read path: matching file lookup → JSONL scan |
 | `index`        | Finds JSONL files that may contain matching records |
+| `index/reindex` | Replays the JSONL journal back into the index when it is stale |
 | `jsonlstore`   | Raw JSONL file I/O |
 | `sourcerepo`   | Source-ID ↔ name resolution |
 | `storefs`      | The data directory: on-disk names, its lock, an io/fs view, and the only way to address a file in it |
