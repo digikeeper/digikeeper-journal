@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/command/compaction"
-	commandmodel "github.com/digikeeper/digikeeper-journal/internal/domain/command/model"
+	cmdmodel "github.com/digikeeper/digikeeper-journal/internal/domain/command/model"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/errs"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
@@ -27,14 +27,14 @@ func New(dir *storefs.Dir) *Store {
 	return &Store{dir: dir}
 }
 
-func (s *Store) AppendCandidate(ctx context.Context, tx storefs.Tx, c commandmodel.Candidate) error {
+func (s *Store) AppendCandidate(ctx context.Context, tx storefs.Tx, c cmdmodel.Candidate) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := s.dir.Check(tx); err != nil {
 		return fmt.Errorf("candidate store: append: %w", err)
 	}
-	path, err := s.candidatePath(core.Pending, core.PartitionFromTime(c.OriginalTimestamp))
+	path, err := s.dir.CandidatePath(core.CandidatePending, core.PartitionFromTime(c.OriginalTimestamp))
 	if err != nil {
 		return err
 	}
@@ -62,22 +62,22 @@ func (s *Store) AppendCandidate(ctx context.Context, tx storefs.Tx, c commandmod
 	return nil
 }
 
-func (s *Store) ListPending(ctx context.Context, tx storefs.Tx, partition core.Partition) ([]commandmodel.Candidate, error) {
+func (s *Store) ListPending(ctx context.Context, tx storefs.Tx, partition core.Partition) ([]cmdmodel.Candidate, error) {
 	if err := s.dir.Check(tx); err != nil {
 		return nil, fmt.Errorf("candidate store: list pending: %w", err)
 	}
-	path, err := s.candidatePath(core.Pending, partition)
+	path, err := s.dir.CandidatePath(core.CandidatePending, partition)
 	if err != nil {
 		return nil, err
 	}
 	return readCandidates(ctx, path)
 }
 
-func (s *Store) ListApplied(ctx context.Context, tx storefs.Tx, partition core.Partition) ([]commandmodel.Candidate, error) {
+func (s *Store) ListApplied(ctx context.Context, tx storefs.Tx, partition core.Partition) ([]cmdmodel.Candidate, error) {
 	if err := s.dir.Check(tx); err != nil {
 		return nil, fmt.Errorf("candidate store: list applied: %w", err)
 	}
-	path, err := s.candidatePath(core.Applied, partition)
+	path, err := s.dir.CandidatePath(core.CandidateApplied, partition)
 	if err != nil {
 		return nil, err
 	}
@@ -88,8 +88,8 @@ func (s *Store) MoveCandidates(
 	ctx context.Context,
 	tx storefs.WriteTx,
 	partition core.Partition,
-	applied []commandmodel.Candidate,
-	denied []commandmodel.Candidate,
+	applied []cmdmodel.Candidate,
+	denied []cmdmodel.Candidate,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -98,7 +98,7 @@ func (s *Store) MoveCandidates(
 		return fmt.Errorf("candidate store: move candidates: %w", err)
 	}
 
-	appliedPath, err := s.pathForResolution(core.Apply, partition)
+	appliedPath, err := s.dir.CandidatePath(core.CandidateApplied, partition)
 	if err != nil {
 		return err
 	}
@@ -108,7 +108,7 @@ func (s *Store) MoveCandidates(
 		return fmt.Errorf("candidate store: applied candidates already exist for %s: %w", partition, errs.ErrConflict)
 	}
 
-	deniedPath, err := s.pathForResolution(core.Deny, partition)
+	deniedPath, err := s.dir.CandidatePath(core.CandidateDenied, partition)
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (s *Store) MoveCandidates(
 	}
 	cleanupTmps = false
 
-	pendingPath, err := s.candidatePath(core.Pending, partition)
+	pendingPath, err := s.dir.CandidatePath(core.CandidatePending, partition)
 	if err != nil {
 		return err
 	}
@@ -186,7 +186,7 @@ func (s *Store) DeleteApplied(ctx context.Context, tx storefs.WriteTx, partition
 		return fmt.Errorf("candidate store: delete applied: %w", err)
 	}
 
-	appliedPath, err := s.candidatePath(core.Applied, partition)
+	appliedPath, err := s.dir.CandidatePath(core.CandidateApplied, partition)
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func (s *Store) DeleteApplied(ctx context.Context, tx storefs.WriteTx, partition
 	for _, id := range candidateIDs {
 		remove[id] = struct{}{}
 	}
-	kept := make([]commandmodel.Candidate, 0, len(applied))
+	kept := make([]cmdmodel.Candidate, 0, len(applied))
 	for _, c := range applied {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -227,7 +227,7 @@ func (s *Store) AuditAppend(ctx context.Context, tx storefs.Tx, event compaction
 	if err := s.dir.Check(tx); err != nil {
 		return fmt.Errorf("candidate store: audit append: %w", err)
 	}
-	path := s.candidateAuditPath(event.Partition)
+	path := s.dir.AuditPath(event.Partition)
 	line, err := jsonx.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("candidate store: marshal candidate audit: %w, %w", err, errs.ErrStorageCommon)
@@ -262,34 +262,7 @@ func (s *Store) WithExclusive(ctx context.Context, fn func(tx storefs.WriteTx) e
 	return s.dir.WithExclusive(ctx, fn)
 }
 
-// candidatePath returns the path for candidates in the given state.
-// Unknown states return an error; TestCandidateAreas_CoverEveryDomainState
-// keeps the state-to-directory mapping complete.
-func (s *Store) candidatePath(state core.CandidateState, partition core.Partition) (string, error) {
-	return s.dir.CandidatePath(state, partition)
-}
-
-// pathForResolution returns the directory selected by the candidate's resolution.
-// It keeps the storage path tied to the domain rather than to variable names.
-func (s *Store) pathForResolution(
-	action core.CandidateResolution,
-	partition core.Partition,
-) (string, error) {
-	state, ok := action.EndState()
-	if !ok {
-		return "", fmt.Errorf(
-			"candidate store: resolution %q has no resting state: %w",
-			action, errs.ErrStorageCommon,
-		)
-	}
-	return s.dir.CandidatePath(state, partition)
-}
-
-func (s *Store) candidateAuditPath(partition core.Partition) string {
-	return s.dir.AuditPath(partition)
-}
-
-func readCandidates(ctx context.Context, path string) ([]commandmodel.Candidate, error) {
+func readCandidates(ctx context.Context, path string) ([]cmdmodel.Candidate, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -302,7 +275,7 @@ func readCandidates(ctx context.Context, path string) ([]commandmodel.Candidate,
 	}
 	defer func() { _ = f.Close() }()
 
-	var candidates []commandmodel.Candidate
+	var candidates []cmdmodel.Candidate
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, bufio.MaxScanTokenSize), maxJSONLRecordSizeBytes)
 	for sc.Scan() {
@@ -313,7 +286,7 @@ func readCandidates(ctx context.Context, path string) ([]commandmodel.Candidate,
 		if len(line) == 0 {
 			continue
 		}
-		var c commandmodel.Candidate
+		var c cmdmodel.Candidate
 		if err := jsonx.Unmarshal(line, &c); err != nil {
 			return nil, fmt.Errorf("candidate store: unmarshal %s: %w, %w", path, err, errs.ErrStorageCommon)
 		}
@@ -325,7 +298,7 @@ func readCandidates(ctx context.Context, path string) ([]commandmodel.Candidate,
 	return candidates, nil
 }
 
-func replaceCandidates(ctx context.Context, path string, candidates []commandmodel.Candidate) error {
+func replaceCandidates(ctx context.Context, path string, candidates []cmdmodel.Candidate) error {
 	tmpPath, err := writeCandidatesTemp(ctx, path, candidates)
 	if err != nil {
 		return err
@@ -343,7 +316,7 @@ func replaceCandidates(ctx context.Context, path string, candidates []commandmod
 	return syncDir(filepath.Dir(path))
 }
 
-func writeCandidatesTemp(ctx context.Context, path string, candidates []commandmodel.Candidate) (string, error) {
+func writeCandidatesTemp(ctx context.Context, path string, candidates []cmdmodel.Candidate) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}

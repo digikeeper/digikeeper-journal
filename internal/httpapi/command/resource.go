@@ -58,13 +58,13 @@ type CandidateResource struct {
 }
 
 type CandidateResourceAttrs struct {
-	RecordID          string                   `json:"record_id"`
-	OriginalTimestamp time.Time                `json:"original_timestamp"`
-	Record            core.Record              `json:"record"`
-	CreatedAt         time.Time                `json:"created_at"`
-	Action            core.CandidateResolution `json:"action,omitempty"`
-	Reason            string                   `json:"reason,omitempty"`
-	ClientID          string                   `json:"client_id,omitempty"`
+	RecordID          string                           `json:"record_id"`
+	OriginalTimestamp time.Time                        `json:"original_timestamp"`
+	Record            core.Record                      `json:"record"`
+	CreatedAt         time.Time                        `json:"created_at"`
+	Action            commandmodel.CandidateResolution `json:"action,omitempty"`
+	Reason            string                           `json:"reason,omitempty"`
+	ClientID          string                           `json:"client_id,omitempty"`
 
 	ResolvedBy string    `json:"resolved_by,omitempty"`
 	ResolvedAt time.Time `json:"resolved_at,omitzero"`

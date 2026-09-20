@@ -3,7 +3,7 @@ package candidate
 import (
 	"time"
 
-	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
+	"github.com/digikeeper/digikeeper-journal/internal/domain/command/model"
 )
 
 type SubmitRequest struct {
@@ -31,7 +31,7 @@ type ResolveRequest struct {
 
 // ResolveItem is a single resolution decision from the caller.
 type ResolveItem struct {
-	CandidateID string                   `json:"candidate_id"`
-	Action      core.CandidateResolution `json:"action"`
-	Reason      string                   `json:"reason,omitempty"`
+	CandidateID string                    `json:"candidate_id"`
+	Action      model.CandidateResolution `json:"action"`
+	Reason      string                    `json:"reason,omitempty"`
 }
