@@ -3,7 +3,6 @@ package commandstore
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,63 +12,65 @@ import (
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/errs"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/index"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 )
 
+// TestStoreExclusiveLockRespectsContext proves a writer gives up when its
+// context expires while a reader holds the directory. Two Dir handles over one
+// path contend exactly as two processes would.
 func TestStoreExclusiveLockRespectsContext(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-
-	idx, err := index.New(filepath.Join(dir, "index.db"), index.Config{})
+	path := t.TempDir()
+	held, err := storefs.Open(path)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = idx.Close() })
-
-	store, err := NewStore(dir, idx)
+	t.Cleanup(func() { _ = held.Close() })
+	other, err := storefs.Open(path)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = store.Close() })
+	t.Cleanup(func() { _ = other.Close() })
 
-	partition := core.PartitionFromTime(time.Date(2026, 3, 8, 10, 0, 0, 0, time.UTC))
-	relPath := store.rawStore.BuildRelPath(partition)
-
-	guard, err := store.partitionLock(relPath).SharedLock()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = guard.Release() })
-
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
-
-	release, err := store.ExclusiveLock(ctx, partition)
+	err = held.WithShared(t.Context(), func(storefs.Tx) error {
+		blocked, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+		defer cancel()
+		return other.WithExclusive(blocked, func(storefs.WriteTx) error { return nil })
+	})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Nil(t, release)
 }
 
 func TestStoreReadRecord(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	idx, err := index.New(filepath.Join(dir, "index.db"), index.Config{})
+	dd, err := storefs.Open(t.TempDir())
+	require.NoError(t, err)
+	idx, err := index.New(dd.IndexPath(), index.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = idx.Close() })
 
-	store, err := NewStore(dir, idx)
+	store, err := NewStore(dd, idx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
-	partition := core.PartitionFromTime(time.Date(2026, 3, 8, 10, 0, 0, 0, time.UTC))
-	want := core.Record{
-		ID:        "record-a",
-		Timestamp: time.Date(2026, 3, 8, 10, 0, 0, 0, time.UTC),
-		Type:      "note",
-		Tags:      []string{"work"},
-		Data:      map[string]any{"note": "test"},
-	}
-	require.NoError(t, store.Append(t.Context(), want))
+	// A domain service opens the transaction before calling in, so the test
+	// has to stand in for the service.
+	ctx := t.Context()
+	require.NoError(t, store.WithShared(ctx, func(tx storefs.Tx) error {
+		partition := core.PartitionFromTime(time.Date(2026, 3, 8, 10, 0, 0, 0, time.UTC))
+		want := core.Record{
+			ID:        "record-a",
+			Timestamp: time.Date(2026, 3, 8, 10, 0, 0, 0, time.UTC),
+			Type:      "note",
+			Tags:      []string{"work"},
+			Data:      map[string]any{"note": "test"},
+		}
+		require.NoError(t, store.Append(ctx, tx, want))
 
-	got, err := store.ReadRecord(t.Context(), want.ID, partition)
-	require.NoError(t, err)
-	assert.Equal(t, want.ID, got.ID)
-	assert.Equal(t, want.Type, got.Type)
+		got, err := store.ReadRecord(ctx, tx, want.ID, partition)
+		require.NoError(t, err)
+		assert.Equal(t, want.ID, got.ID)
+		assert.Equal(t, want.Type, got.Type)
 
-	_, err = store.ReadRecord(t.Context(), "missing", partition)
-	require.True(t, errors.Is(err, errs.ErrRecordNotFound))
+		_, err = store.ReadRecord(ctx, tx, "missing", partition)
+		require.True(t, errors.Is(err, errs.ErrRecordNotFound))
+		return nil
+	}))
 }

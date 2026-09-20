@@ -3,44 +3,41 @@ package candidatestore
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/command/compaction"
 	commandmodel "github.com/digikeeper/digikeeper-journal/internal/domain/command/model"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/errs"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 	"github.com/digikeeper/digikeeper-journal/internal/jsonx"
-	"github.com/digikeeper/digikeeper-journal/pkg/flock"
 )
 
-const (
-	maxJSONLRecordSizeBytes = 10 * 1024 * 1024
-	lockRetryDelay          = 10 * time.Millisecond
-)
+const maxJSONLRecordSizeBytes = 10 * 1024 * 1024
 
 type Store struct {
-	baseDir string
+	dir *storefs.Dir
 }
 
-func New(dataPath string) (*Store, error) {
-	baseDir := filepath.Join(dataPath, "dk_candidates")
-	for _, dir := range []string{"pending", "applied", "denied", "candidateaudit", "locks"} {
-		if err := os.MkdirAll(filepath.Join(baseDir, dir), 0o755); err != nil {
-			return nil, fmt.Errorf("candidate store: mkdir %s: %w", dir, err)
-		}
-	}
-	return &Store{baseDir: baseDir}, nil
+// New returns a candidate store over an already-open data directory; Open
+// created the areas it writes to.
+func New(dir *storefs.Dir) *Store {
+	return &Store{dir: dir}
 }
 
-func (s *Store) AppendCandidate(ctx context.Context, c commandmodel.Candidate) error {
+func (s *Store) AppendCandidate(ctx context.Context, tx storefs.Tx, c commandmodel.Candidate) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	path := s.candidatePath("pending", core.PartitionFromTime(c.OriginalTimestamp))
+	if err := s.dir.Check(tx); err != nil {
+		return fmt.Errorf("candidate store: append: %w", err)
+	}
+	path, err := s.candidatePath(core.Pending, core.PartitionFromTime(c.OriginalTimestamp))
+	if err != nil {
+		return err
+	}
 	line, err := jsonx.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("candidate store: marshal candidate: %w, %w", err, errs.ErrStorageCommon)
@@ -65,16 +62,31 @@ func (s *Store) AppendCandidate(ctx context.Context, c commandmodel.Candidate) e
 	return nil
 }
 
-func (s *Store) ListPending(ctx context.Context, partition core.Partition) ([]commandmodel.Candidate, error) {
-	return readCandidates(ctx, s.candidatePath("pending", partition))
+func (s *Store) ListPending(ctx context.Context, tx storefs.Tx, partition core.Partition) ([]commandmodel.Candidate, error) {
+	if err := s.dir.Check(tx); err != nil {
+		return nil, fmt.Errorf("candidate store: list pending: %w", err)
+	}
+	path, err := s.candidatePath(core.Pending, partition)
+	if err != nil {
+		return nil, err
+	}
+	return readCandidates(ctx, path)
 }
 
-func (s *Store) ListApplied(ctx context.Context, partition core.Partition) ([]commandmodel.Candidate, error) {
-	return readCandidates(ctx, s.candidatePath("applied", partition))
+func (s *Store) ListApplied(ctx context.Context, tx storefs.Tx, partition core.Partition) ([]commandmodel.Candidate, error) {
+	if err := s.dir.Check(tx); err != nil {
+		return nil, fmt.Errorf("candidate store: list applied: %w", err)
+	}
+	path, err := s.candidatePath(core.Applied, partition)
+	if err != nil {
+		return nil, err
+	}
+	return readCandidates(ctx, path)
 }
 
 func (s *Store) MoveCandidates(
 	ctx context.Context,
+	tx storefs.WriteTx,
 	partition core.Partition,
 	applied []commandmodel.Candidate,
 	denied []commandmodel.Candidate,
@@ -82,15 +94,24 @@ func (s *Store) MoveCandidates(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if err := s.dir.Check(tx); err != nil {
+		return fmt.Errorf("candidate store: move candidates: %w", err)
+	}
 
-	appliedPath := s.candidatePath("applied", partition)
+	appliedPath, err := s.pathForResolution(core.Apply, partition)
+	if err != nil {
+		return err
+	}
 	if nonEmpty, err := fileNonEmpty(appliedPath); err != nil {
 		return fmt.Errorf("candidate store: stat applied: %w, %w", err, errs.ErrStorageCommon)
 	} else if nonEmpty {
 		return fmt.Errorf("candidate store: applied candidates already exist for %s: %w", partition, errs.ErrConflict)
 	}
 
-	deniedPath := s.candidatePath("denied", partition)
+	deniedPath, err := s.pathForResolution(core.Deny, partition)
+	if err != nil {
+		return err
+	}
 	existingDenied, err := readCandidates(ctx, deniedPath)
 	if err != nil {
 		return fmt.Errorf("candidate store: read denied: %w", err)
@@ -142,7 +163,10 @@ func (s *Store) MoveCandidates(
 	}
 	cleanupTmps = false
 
-	pendingPath := s.candidatePath("pending", partition)
+	pendingPath, err := s.candidatePath(core.Pending, partition)
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(pendingPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("candidate store: remove pending: %w, %w", err, errs.ErrStorageCommon)
 	}
@@ -154,12 +178,18 @@ func (s *Store) MoveCandidates(
 	return nil
 }
 
-func (s *Store) DeleteApplied(ctx context.Context, partition core.Partition, candidateIDs []string) error {
+func (s *Store) DeleteApplied(ctx context.Context, tx storefs.WriteTx, partition core.Partition, candidateIDs []string) error {
 	if len(candidateIDs) == 0 {
 		return nil
 	}
+	if err := s.dir.Check(tx); err != nil {
+		return fmt.Errorf("candidate store: delete applied: %w", err)
+	}
 
-	appliedPath := s.candidatePath("applied", partition)
+	appliedPath, err := s.candidatePath(core.Applied, partition)
+	if err != nil {
+		return err
+	}
 	applied, err := readCandidates(ctx, appliedPath)
 	if err != nil {
 		return err
@@ -190,9 +220,12 @@ func (s *Store) DeleteApplied(ctx context.Context, partition core.Partition, can
 	return replaceCandidates(ctx, appliedPath, kept)
 }
 
-func (s *Store) AuditAppend(ctx context.Context, event compaction.CandidateAuditEvent) error {
+func (s *Store) AuditAppend(ctx context.Context, tx storefs.Tx, event compaction.CandidateAuditEvent) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if err := s.dir.Check(tx); err != nil {
+		return fmt.Errorf("candidate store: audit append: %w", err)
 	}
 	path := s.candidateAuditPath(event.Partition)
 	line, err := jsonx.Marshal(event)
@@ -219,42 +252,41 @@ func (s *Store) AuditAppend(ctx context.Context, event compaction.CandidateAudit
 	return nil
 }
 
-func (s *Store) SharedLock(ctx context.Context, partition core.Partition) (func(), error) {
-	guard, err := lockWithContext(ctx, s.partitionLock(partition).TrySharedLock)
-	if err != nil {
-		return nil, fmt.Errorf("candidate store: shared lock %s: %w", partition, err)
+// WithShared and WithExclusive run fn under the data-directory lock and provide
+// the transaction required by store methods, allowing one lock to span a use case.
+func (s *Store) WithShared(ctx context.Context, fn func(tx storefs.Tx) error) error {
+	return s.dir.WithShared(ctx, fn)
+}
+
+func (s *Store) WithExclusive(ctx context.Context, fn func(tx storefs.WriteTx) error) error {
+	return s.dir.WithExclusive(ctx, fn)
+}
+
+// candidatePath returns the path for candidates in the given state.
+// Unknown states return an error; TestCandidateAreas_CoverEveryDomainState
+// keeps the state-to-directory mapping complete.
+func (s *Store) candidatePath(state core.CandidateState, partition core.Partition) (string, error) {
+	return s.dir.CandidatePath(state, partition)
+}
+
+// pathForResolution returns the directory selected by the candidate's resolution.
+// It keeps the storage path tied to the domain rather than to variable names.
+func (s *Store) pathForResolution(
+	action core.CandidateResolution,
+	partition core.Partition,
+) (string, error) {
+	state, ok := action.EndState()
+	if !ok {
+		return "", fmt.Errorf(
+			"candidate store: resolution %q has no resting state: %w",
+			action, errs.ErrStorageCommon,
+		)
 	}
-	return func() { _ = guard.Release() }, nil
-}
-
-func (s *Store) ExclusiveLock(ctx context.Context, partition core.Partition) (func(), error) {
-	guard, err := lockWithContext(ctx, s.partitionLock(partition).TryExclusiveLock)
-	if err != nil {
-		return nil, fmt.Errorf("candidate store: exclusive lock %s: %w", partition, err)
-	}
-	return func() { _ = guard.Release() }, nil
-}
-
-func (s *Store) partitionLock(partition core.Partition) *flock.RWLock {
-	return flock.NewRWLock(filepath.Join(s.baseDir, "locks", partition.String()+".lock"))
-}
-
-func (s *Store) candidatePath(area string, partition core.Partition) string {
-	return filepath.Join(
-		s.baseDir,
-		area,
-		fmt.Sprintf("%d", partition.Year()),
-		fmt.Sprintf("%s_candidates.jsonl", partition.String()),
-	)
+	return s.dir.CandidatePath(state, partition)
 }
 
 func (s *Store) candidateAuditPath(partition core.Partition) string {
-	return filepath.Join(
-		s.baseDir,
-		"candidateaudit",
-		fmt.Sprintf("%d", partition.Year()),
-		fmt.Sprintf("%s_candidateaudit.jsonl", partition.String()),
-	)
+	return s.dir.AuditPath(partition)
 }
 
 func readCandidates(ctx context.Context, path string) ([]commandmodel.Candidate, error) {
@@ -377,29 +409,4 @@ func syncDir(path string) error {
 	}
 	defer func() { _ = dir.Close() }()
 	return dir.Sync()
-}
-
-func lockWithContext(ctx context.Context, tryLock func() (*flock.Guard, error)) (*flock.Guard, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	ticker := time.NewTicker(lockRetryDelay)
-	defer ticker.Stop()
-
-	for {
-		guard, err := tryLock()
-		switch {
-		case err == nil:
-			return guard, nil
-		case !errors.Is(err, flock.ErrLocked):
-			return nil, err
-		}
-
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-ticker.C:
-		}
-	}
 }

@@ -6,20 +6,21 @@ import (
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/command/model"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 )
-
-// Storage manages candidate lifecycle: append, list pending, move, and partition locking.
 type Storage interface {
-	SharedLock(ctx context.Context, partition core.Partition) (release func(), err error)
-	ExclusiveLock(ctx context.Context, partition core.Partition) (release func(), err error)
-	AppendCandidate(ctx context.Context, c model.Candidate) error
-	ListPending(ctx context.Context, partition core.Partition) ([]model.Candidate, error)
-	MoveCandidates(ctx context.Context, partition core.Partition, applied, denied []model.Candidate) error
+	// WithShared is sufficient for reading operations.
+	WithShared(ctx context.Context, fn func(tx storefs.Tx) error) error
+	// WithExclusive is sufficient for multiple partition actions.
+	WithExclusive(ctx context.Context, fn func(tx storefs.WriteTx) error) error
+	AppendCandidate(ctx context.Context, tx storefs.Tx, c model.Candidate) error
+	ListPending(ctx context.Context, tx storefs.Tx, partition core.Partition) ([]model.Candidate, error)
+	MoveCandidates(ctx context.Context, tx storefs.WriteTx, partition core.Partition, applied, denied []model.Candidate) error
 }
 
 // JournalStorage reads existing journal records to verify the original exists.
 type JournalStorage interface {
-	ReadRecord(ctx context.Context, recordID string, partition core.Partition) (core.Record, error)
+	ReadRecord(ctx context.Context, tx storefs.Tx, recordID string, partition core.Partition) (core.Record, error)
 }
 
 // Service handles candidate commands: submit and resolve.

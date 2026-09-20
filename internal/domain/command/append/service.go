@@ -5,10 +5,13 @@ import (
 	"log/slog"
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 )
 
 type Storage interface {
-	Append(ctx context.Context, record core.Record) error
+	// WithShared is sufficient for appending.
+	WithShared(ctx context.Context, fn func(tx storefs.Tx) error) error
+	Append(ctx context.Context, tx storefs.Tx, record core.Record) error
 }
 
 type SourceRepo interface {

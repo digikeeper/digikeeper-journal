@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -19,10 +18,11 @@ import (
 	apiqry "github.com/digikeeper/digikeeper-journal/internal/httpapi/query"
 	apisreg "github.com/digikeeper/digikeeper-journal/internal/httpapi/schemaregistry"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/candidatestore"
-	store "github.com/digikeeper/digikeeper-journal/internal/infrastructure/commandstore"
+	cmdstore "github.com/digikeeper/digikeeper-journal/internal/infrastructure/commandstore"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/index"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/querystore"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/sourcerepo"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 )
 
 func main() {
@@ -43,11 +43,13 @@ func run() error {
 
 	// Storage
 	dataPath := cfg.JournalStorage.Path
-	if err := os.MkdirAll(dataPath, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dataPath, err)
+	store, err := storefs.Open(dataPath)
+	if err != nil {
+		return fmt.Errorf("open data directory: %w", err)
 	}
+	defer func() { _ = store.Close() }()
 
-	idx, err := index.New(filepath.Join(dataPath, "index.db"), index.Config{
+	idx, err := index.NewIdx(store.IndexPath(), index.Config{
 		JournalMode: cfg.SQLite.JournalMode,
 		BusyTimeout: cfg.SQLite.BusyTimeout,
 	})
@@ -56,18 +58,15 @@ func run() error {
 	}
 	defer func() { _ = idx.Close() }()
 
-	journalStore, err := store.NewStore(dataPath, idx)
+	journalStore, err := cmdstore.NewStore(store, idx)
 	if err != nil {
 		return fmt.Errorf("init storage: %w", err)
 	}
 	defer func() { _ = journalStore.Close() }()
 
-	candidateStore, err := candidatestore.New(dataPath)
-	if err != nil {
-		return fmt.Errorf("init candidate storage: %w", err)
-	}
+	candidateStore := candidatestore.New(store)
 
-	qryStore := querystore.NewStore(filepath.Join(dataPath, "dk_journal"), idx)
+	qryStore := querystore.NewStore(store.JournalDir(), idx)
 
 	// Sources
 	srcRepo, err := sourcerepo.New()
@@ -81,7 +80,7 @@ func run() error {
 		candidateStore, journalStore, logger,
 	)
 	compactionSvc := domainCompaction.NewService(
-		journalStore, candidateStore, idx, logger,
+		journalStore, candidateStore, idx, journalStore, logger,
 	)
 	qrySvc := query.NewService(qryStore, qryStore, logger)
 

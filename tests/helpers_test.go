@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,6 +26,7 @@ import (
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/index"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/querystore"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/sourcerepo"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 	"github.com/digikeeper/digikeeper-journal/internal/jsonx"
 )
 
@@ -103,9 +103,10 @@ type candidateRecord struct {
 func setupTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	dir := t.TempDir()
+	dir, err := storefs.Open(t.TempDir())
+	require.NoError(t, err, "open data dir")
 
-	idx, err := index.New(filepath.Join(dir, "index.db"), index.Config{})
+	idx, err := index.New(dir.IndexPath(), index.Config{})
 	require.NoError(t, err, "init index")
 	t.Cleanup(func() { _ = idx.Close() })
 
@@ -113,10 +114,9 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	require.NoError(t, err, "init store")
 	t.Cleanup(func() { _ = journalStore.Close() })
 
-	candidateStore, err := candidatestore.New(dir)
-	require.NoError(t, err, "init candidate store")
+	candidateStore := candidatestore.New(dir)
 
-	qryStore := querystore.NewStore(filepath.Join(dir, "dk_journal"), idx)
+	qryStore := querystore.NewStore(dir.JournalDir(), idx)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
@@ -125,7 +125,7 @@ func setupTestServer(t *testing.T) *httptest.Server {
 
 	cmdSvc := command.NewService(journalStore, srcRepo, logger)
 	candidateSvc := domainCandidate.NewService(candidateStore, journalStore, logger)
-	compactionSvc := domainCompaction.NewService(journalStore, candidateStore, idx, logger)
+	compactionSvc := domainCompaction.NewService(journalStore, candidateStore, idx, journalStore, logger)
 	qrySvc := query.NewService(qryStore, qryStore, logger)
 
 	cmdHandler := apicmd.NewHandler(cmdSvc, srcRepo.ResolveName)

@@ -9,13 +9,13 @@ Endpoints:
 
 - `GET /v1/registry` returns schema type summaries with their latest and available versions.
 - `GET /v1/registry/{type}/schema` returns the latest schema for a record type.
-- `GET /v1/registry/{type}/instruction` returns the latest type-instraction for a record type.
-- `GET /v1/registry/{type}/{version}/schema` && `GET /v1/registry/{type}/{version}/instruction` returns schema/instruiction by version
+- `GET /v1/registry/{type}/instruction` returns the latest type instruction for a record type.
+- `GET /v1/registry/{type}/{version}/schema` and `GET /v1/registry/{type}/{version}/instruction` return the schema/instructions for a version.
 
 Schemas are JSON files in `internal/httpapi/schemaregistry/{type}`. The handler embeds
 and loads them at startup, retaining each schema as `json.RawMessage`.
 
-Schema and Instruction files use this required path format: `{type}/v{version}/<schema.json|instructions.md>` 
+Schema and instruction files use this required path format: `{type}/v{version}/<schema.json|instructions.md>`
 
 ```text
 note/v1/schema.json  → type: note, version: 1, file_type: json_schema
@@ -27,14 +27,14 @@ note/v2/instructions.md  → type: note, version: 2, file_type: text, instructio
 
 ## Versioning Contract
 
-A schema identity is `(type, version)`. Published schema files are immutable == add a new
+A schema identity is `(type, version)`. Published schema files are immutable: add a new
 file for a changed schema instead of modifying an existing version.
 A published `(type, version)` includes both files: json schema and instructions, and both are immutable once published.
 
 A record persists its schema version in `m.sv`.
 This identifies the exact registry schema needed to interpret that record; it never means "latest".
 
-Record metadata also contains `m.r`, its logical revision, it does not correlate directly with schema version.
+Record metadata also contains `m.r`, its logical revision. It does not correlate directly with the schema version.
 
 ## Why It Exists
 

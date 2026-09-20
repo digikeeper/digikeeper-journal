@@ -13,6 +13,7 @@ import (
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/errs"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 	"github.com/digikeeper/digikeeper-journal/internal/jsonx"
 )
 
@@ -22,7 +23,6 @@ const maxJournalSizeBytes = 10 * 1024 * 1024 // 10 MiB
 //
 // Concurrency model:
 //   - files (sync.Map) provides lock-free lookup of open file descriptors.
-//   - O_APPEND guarantees atomic positioning for writes.
 //   - dirMu serializes directory creation only when a new year-directory is needed.
 type JSONLWriter struct {
 	dir      string
@@ -200,7 +200,7 @@ func (w *JSONLWriter) Close() error {
 //	write tmp → fsync → rename → evict cache
 func (w *JSONLWriter) ReplaceFile(relPath string, records []core.Record) error {
 	fpath := filepath.Join(w.dir, relPath)
-	tmpPath := fpath + ".compact.tmp"
+	tmpPath := fpath + storefs.CompactTmpSuffix
 
 	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
@@ -241,10 +241,7 @@ func (w *JSONLWriter) ReplaceFile(relPath string, records []core.Record) error {
 
 // BuildRelPath returns the partition-relative path for the given partition.
 func (w *JSONLWriter) BuildRelPath(p core.Partition) string {
-	return fmt.Sprintf(
-		"%d/%s_%s.jsonl",
-		p.Year(), p.String(), w.fileType,
-	)
+	return storefs.PartitionKey(w.fileType, p)
 }
 
 // Dir returns the base directory of the JSONL store.

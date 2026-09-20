@@ -31,7 +31,7 @@ Possible directory layout:
 - append candidate to candidates/pending/{partition}
 - if another pending candidate exists for the same record_id, still append and log duplicate
 Limitations:
-- submit is blocked during resolve same partition
+- submit is blocked during any resolve or compaction (this is a simplification of locking; see ARCHITECTURE.md § Locking)
 - submit is allowed while candidates/applied/{partition} exists
 
 ### Resolve
@@ -43,17 +43,17 @@ Limitations:
 - successful resolve always creates both: candidates/applied/{partition} and candidates/denied/{partition}
 - resolved candidates are removed from candidates/pending/{partition} atomically
 Limitation:
-- resolve is blocked, if candidates/applied/{partition} already exists
-- write applied/denied and remove pending should be atomically or idempotent
+- resolve is blocked if candidates/applied/{partition} already exists
+- writing applied/denied and removing pending should be atomic or idempotent
 
 ### Compact
 - read journal/{partition} in original order
 - replace rows whose record_id matches an applied candidate
-- if an candidate from candidates/applied/{partition} has no matching row, append it to the end
+- if a candidate from candidates/applied/{partition} has no matching row, append it to the end
 - replace journal partition
 - delete candidates/applied/{partition} after successful compaction
 Limitation:
-- replace and delete candidates/applied/{partition} should be atomically or idempotent
+- replacing and deleting candidates/applied/{partition} should be atomic or idempotent
 Notes:
 - denied/{partition} is independent from compaction
 
@@ -62,7 +62,7 @@ Notes:
 - unresolved candidates live in candidates/pending/{partition}
 - resolve is atomic and partition-wide
 - successful resolve always creates both candidates/applied/{partition} and candidates/denied/{partition}
-- at most one unresolved applied candidates/pending/{partition} may exist per partition
+- at most one unresolved applied candidate batch may exist per partition
 - compaction is replace-or-append by record_id
 
 
@@ -92,4 +92,4 @@ Useful event types:
 - partition_compacted
 - recovery_cleanup
 
-To log action on candidate use candidate identity.
+To log an action on a candidate, use its identity.

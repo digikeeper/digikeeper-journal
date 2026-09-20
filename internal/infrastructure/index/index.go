@@ -12,6 +12,7 @@ import (
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/appmetric"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 	"github.com/digikeeper/digikeeper-journal/internal/jsonx"
 	"github.com/digikeeper/digikeeper-journal/pkg/sqlitedsn"
 	"github.com/digikeeper/digikeeper-journal/pkg/timefmt"
@@ -38,7 +39,7 @@ type Store struct {
 }
 
 // New opens (or creates) a SQLite database at path and runs migrations.
-func New(path string, cfg Config) (*Store, error) {
+func NewIdx(path string, cfg Config) (*Store, error) {
 	db, err := sql.Open("sqlite", sqlitedsn.File(path, sqliteDSNOptions(cfg)...))
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: open: %w", err)
@@ -237,7 +238,7 @@ func (s *Store) RebuildPartition(ctx context.Context, partition core.Partition, 
 	start := time.Now()
 	defer func() { appmetric.RecordIndexLatency(time.Since(start)) }()
 
-	file := fmt.Sprintf("%d/%s_journal.jsonl", partition.Year(), partition.String())
+	file := storefs.JournalKey(partition)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

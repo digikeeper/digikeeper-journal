@@ -20,5 +20,5 @@ just lint    # golangci-lint
 just fmt     # golangci-lint --fix
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for main concept decisions.
-See docs/ for design decisions.
+See [docs/README.md](docs/README.md) for the full catalog of design decisions.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the main architectural decisions.

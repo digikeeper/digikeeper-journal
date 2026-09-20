@@ -90,9 +90,11 @@ func NewRWLock(path string) *RWLock {
 	return &RWLock{path: path}
 }
 
+// Path of lock
+func (l *RWLock) Path() string { return l.path }
+
 // SharedLock acquires a shared (LOCK_SH) flock, blocking until available.
-// Multiple shared locks can coexist; an exclusive lock blocks until all
-// shared holders release.
+// Multiple shared locks can coexist; an exclusive lock blocks until all shared holders release.
 func (l *RWLock) SharedLock() (*Guard, error) {
 	return l.acquire(syscall.LOCK_SH)
 }

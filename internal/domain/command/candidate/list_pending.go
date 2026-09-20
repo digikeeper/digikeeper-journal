@@ -6,19 +6,20 @@ import (
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/command/model"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 )
 
 // ListPending returns the candidate batch currently awaiting resolution.
 func (s *Service) ListPending(ctx context.Context, partition core.Partition) ([]model.Candidate, error) {
-	release, err := s.storage.SharedLock(ctx, partition)
-	if err != nil {
-		return nil, fmt.Errorf("candidate: lock candidate partition %s: %w", partition, err)
-	}
-	defer release()
-
-	pending, err := s.storage.ListPending(ctx, partition)
+	var pending []model.Candidate
+	err := s.storage.WithShared(ctx, func(tx storefs.Tx) error {
+		var err error
+		pending, err = s.storage.ListPending(ctx, tx, partition)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("candidate: list pending: %w", err)
 	}
+
 	return pending, nil
 }

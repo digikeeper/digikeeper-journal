@@ -2,18 +2,24 @@ package compaction
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/command/model"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 )
+
+// errNothingToCompact unwinds the transaction when there is no work, so the
+// empty case releases the lock through the same path as every other exit.
+var errNothingToCompact = errors.New("compact: nothing to compact")
 
 // Compact drains applied candidates for a partition by rewriting the records.
 //
-//  1. Read applied/{partition} — if empty, nothing to do.
-//  2. Acquire exclusive record and candidate partition locks.
+//  1. Take the data directory's exclusive lock.
+//  2. Read applied/{partition} — if empty, nothing to do.
 //  3. Read all records from journal/{partition}.
 //  4. Substitute: replace matching records; append unmatched applied candidates.
 //  5. Atomic rewrite (write-temp → fsync → rename via renameio).
@@ -26,78 +32,80 @@ import (
 // already applied, skips them (not counted in appliedCount/audit), and
 // deletes them. The end state is idempotent.
 func (s *Service) Compact(ctx context.Context, req CompactRequest) error {
-	// 1. Read applied candidates.
-	applied, err := s.candidates.ListApplied(ctx, req.Partition)
-	if err != nil {
-		return fmt.Errorf("compact: list applied: %w", err)
-	}
-	if len(applied) == 0 {
-		s.logger.InfoContext(ctx, "no applied candidates, nothing to compact",
-			slog.String("partition", req.Partition.String()))
+	var appliedCount, totalRecords int
+
+	// Stop the world for the whole sequence:
+	//  read a partition and rewrite it
+	err := s.lock.WithExclusive(ctx, func(tx storefs.WriteTx) error {
+		// 2. Read applied candidates. Inside the lock, so the set compacted is
+		// the set that was there when the journal was read.
+		applied, err := s.candidates.ListApplied(ctx, tx, req.Partition)
+		if err != nil {
+			return fmt.Errorf("compact: list applied: %w", err)
+		}
+		if len(applied) == 0 {
+			s.logger.InfoContext(ctx, "no applied candidates, nothing to compact",
+				slog.String("partition", req.Partition.String()))
+			return errNothingToCompact
+		}
+
+		// 3. Read all records.
+		records, err := s.journalStorage.ReadPartition(ctx, tx, req.Partition)
+		if err != nil {
+			return fmt.Errorf("compact: read partition %s: %w", req.Partition, err)
+		}
+
+		// 4. Substitute.
+		rewritten, count := s.applySubstitutions(records, applied)
+		appliedCount, totalRecords = count, len(rewritten)
+
+		// 5. Atomic rewrite.
+		if err := s.journalStorage.ReplacePartition(ctx, tx, req.Partition, rewritten); err != nil {
+			return fmt.Errorf("compact: rewrite partition %s: %w", req.Partition, err)
+		}
+
+		// 6. Delete compacted candidates (best-effort).
+		ids := make([]string, len(applied))
+		for i, c := range applied {
+			ids[i] = c.ID
+		}
+		if err := s.candidates.DeleteApplied(ctx, tx, req.Partition, ids); err != nil {
+			s.logger.ErrorContext(ctx, "delete applied failed, will re-apply on next run",
+				slog.String("partition", req.Partition.String()),
+				slog.Any("error", err))
+		}
+
+		// 7. Rebuild index (best-effort).
+		if err := s.index.RebuildPartition(ctx, req.Partition, rewritten); err != nil {
+			s.logger.ErrorContext(ctx, "index rebuild failed, partition is consistent but index may be stale",
+				slog.String("partition", req.Partition.String()),
+				slog.Any("error", err))
+		}
+
+		// 8. Candidate audit (best-effort).
+		event := CandidateAuditEvent{
+			Partition:    req.Partition,
+			AppliedCount: appliedCount,
+			CompletedAt:  time.Now().UTC(),
+		}
+		if err := s.candidates.AuditAppend(ctx, tx, event); err != nil {
+			s.logger.ErrorContext(ctx, "candidate audit append failed",
+				slog.String("partition", req.Partition.String()),
+				slog.Any("error", err))
+		}
 		return nil
-	}
-
-	// 2. Acquire exclusive locks on record and candidate partitions.
-	releaseRecord, err := s.journalStorage.ExclusiveLock(ctx, req.Partition)
-	if err != nil {
-		return fmt.Errorf("compact: lock record partition %s: %w", req.Partition, err)
-	}
-	defer releaseRecord()
-
-	releaseCandidate, err := s.candidates.ExclusiveLock(ctx, req.Partition)
-	if err != nil {
-		return fmt.Errorf("compact: lock candidate partition %s: %w", req.Partition, err)
-	}
-	defer releaseCandidate()
-
-	// 3. Read all records.
-	records, err := s.journalStorage.ReadPartition(ctx, req.Partition)
-	if err != nil {
-		return fmt.Errorf("compact: read partition %s: %w", req.Partition, err)
-	}
-
-	// 4. Substitute.
-	rewritten, appliedCount := s.applySubstitutions(records, applied)
-
-	// 5. Atomic rewrite.
-	if err := s.journalStorage.ReplacePartition(ctx, req.Partition, rewritten); err != nil {
-		return fmt.Errorf("compact: rewrite partition %s: %w", req.Partition, err)
-	}
-
-	// 6. Delete compacted candidates (best-effort).
-	ids := make([]string, len(applied))
-	for i, c := range applied {
-		ids[i] = c.ID
-	}
-	if err := s.candidates.DeleteApplied(ctx, req.Partition, ids); err != nil {
-		s.logger.ErrorContext(ctx, "delete applied failed, will re-apply on next run",
-			slog.String("partition", req.Partition.String()),
-			slog.Any("error", err))
-	}
-
-	// 7. Rebuild index (best-effort).
-	if err := s.index.RebuildPartition(ctx, req.Partition, rewritten); err != nil {
-		s.logger.ErrorContext(ctx, "index rebuild failed, partition is consistent but index may be stale",
-			slog.String("partition", req.Partition.String()),
-			slog.Any("error", err))
-	}
-
-	// 8. Candidate audit (best-effort).
-	event := CandidateAuditEvent{
-		Partition:    req.Partition,
-		AppliedCount: appliedCount,
-		CompletedAt:  time.Now().UTC(),
-	}
-	if err := s.candidates.AuditAppend(ctx, event); err != nil {
-		s.logger.ErrorContext(ctx, "candidate audit append failed",
-			slog.String("partition", req.Partition.String()),
-			slog.Any("error", err))
+	})
+	switch {
+	case errors.Is(err, errNothingToCompact):
+		return nil
+	case err != nil:
+		return err
 	}
 
 	s.logger.InfoContext(ctx, "compaction completed",
 		slog.String("partition", req.Partition.String()),
 		slog.Int("applied", appliedCount),
-		slog.Int("total_records", len(rewritten)),
+		slog.Int("total_records", totalRecords),
 	)
 
 	return nil

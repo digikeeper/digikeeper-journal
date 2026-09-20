@@ -6,58 +6,47 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"time"
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/appmetric"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/errs"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/index"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/jsonlstore"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 	"github.com/digikeeper/digikeeper-journal/pkg/flock"
 )
 
-const lockRetryDelay = 10 * time.Millisecond
-
-type Store struct {
+type CMDStore struct {
+	dir      *storefs.Dir
 	flock    *flock.Lock
 	rawStore *jsonlstore.JSONLWriter
 	idx      *index.Store
 }
 
-func NewStore(dataPath string, idx *index.Store) (*Store, error) {
-	if err := os.MkdirAll(dataPath, 0o755); err != nil {
-		return nil, fmt.Errorf("store: mkdir %s: %w", dataPath, err)
-	}
-
-	flock, err := flock.Acquire(filepath.Join(dataPath, "server.lock"))
+// NewStore returns a journal store over an storefs; Fixes drift in journal tree
+// and takes server.lock for guarantee single process lifetime.
+func NewStore(dir *storefs.Dir, idx *index.Store) (*CMDStore, error) {
+	serverLock, err := flock.Acquire(dir.ServerLockPath())
 	if err != nil {
 		return nil, err
 	}
 
-	jsonJournalDir := filepath.Join(dataPath, "dk_journal")
-	if err := os.MkdirAll(jsonJournalDir, 0o755); err != nil {
-		_ = flock.Release()
-		return nil, fmt.Errorf("store: mkdir %s: %w", jsonJournalDir, err)
-	}
-
-	st := &Store{
-		flock:    flock,
-		rawStore: jsonlstore.NewJSONLWriter(jsonJournalDir, "journal"),
+	st := &CMDStore{
+		dir:      dir,
+		flock:    serverLock,
+		rawStore: jsonlstore.NewJSONLWriter(dir.JournalDir(), storefs.JournalKind),
 		idx:      idx,
 	}
-	st.recoverCompaction(jsonJournalDir)
+	st.recoverCompaction()
 
 	return st, nil
 }
 
-func (s *Store) Append(ctx context.Context, record core.Record) error {
-	relPath := s.rawStore.BuildRelPath(core.PartitionFromTime(record.Timestamp))
-	guard, err := s.partitionLock(relPath).SharedLock()
-	if err != nil {
-		return fmt.Errorf("store: partition lock: %w", err)
+// Append appends a record to the journal.
+func (s *CMDStore) Append(ctx context.Context, tx storefs.Tx, record core.Record) error {
+	if err := s.dir.Check(tx); err != nil {
+		return fmt.Errorf("store: append: %w", err)
 	}
-	defer func() { _ = guard.Release() }()
 
 	key, err := s.rawStore.Append(record)
 	if err != nil {
@@ -76,13 +65,9 @@ func (s *Store) Append(ctx context.Context, record core.Record) error {
 	return nil
 }
 
-// recoverCompaction removes orphaned .compact.tmp
-//
-// Layout: dk_journal/{YYYY}/{YYYY-MM-DD}_journal.jsonl.compact.tmp
-func (s *Store) recoverCompaction(dir string) {
-	matches, _ := filepath.Glob(filepath.Join(dir, "*", "*.compact.tmp"))
-
-	for _, tmp := range matches {
+// recoverCompaction removes compaction temporaries data.
+func (s *CMDStore) recoverCompaction() {
+	for _, tmp := range s.dir.CompactTemps() {
 		if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
 			slog.Warn("failed to remove orphaned compaction temp file",
 				slog.String("file", tmp), slog.Any("error", err))
@@ -92,13 +77,12 @@ func (s *Store) recoverCompaction(dir string) {
 	}
 }
 
-func (s *Store) partitionLock(relPath string) *flock.RWLock {
-	lockPath := filepath.Join(s.rawStore.Dir(), relPath+".lock")
-	return flock.NewRWLock(lockPath)
-}
+// ReadPartition reads all records from the given partition.
+func (s *CMDStore) ReadPartition(_ context.Context, tx storefs.Tx, p core.Partition) ([]core.Record, error) {
+	if err := s.dir.Check(tx); err != nil {
+		return nil, fmt.Errorf("store: read partition %s: %w", p, err)
+	}
 
-// ReadPartition reads all records from the given partition. Satisfies compaction.JournalStorage.
-func (s *Store) ReadPartition(_ context.Context, p core.Partition) ([]core.Record, error) {
 	relPath := s.rawStore.BuildRelPath(p)
 	records, err := s.rawStore.Read(relPath)
 	if err != nil {
@@ -107,9 +91,9 @@ func (s *Store) ReadPartition(_ context.Context, p core.Partition) ([]core.Recor
 	return records, nil
 }
 
-// ReadRecord scans one partition for the requested record. Satisfies candidate.JournalStorage.
-func (s *Store) ReadRecord(ctx context.Context, recordID string, p core.Partition) (core.Record, error) {
-	records, err := s.ReadPartition(ctx, p)
+// ReadRecord scans one partition for the requested record.
+func (s *CMDStore) ReadRecord(ctx context.Context, tx storefs.Tx, recordID string, p core.Partition) (core.Record, error) {
+	records, err := s.ReadPartition(ctx, tx, p)
 	if err != nil {
 		return core.Record{}, err
 	}
@@ -125,7 +109,11 @@ func (s *Store) ReadRecord(ctx context.Context, recordID string, p core.Partitio
 }
 
 // ReplacePartition atomically rewrites the partition with records. Satisfies compaction.JournalStorage.
-func (s *Store) ReplacePartition(_ context.Context, p core.Partition, records []core.Record) error {
+func (s *CMDStore) ReplacePartition(_ context.Context, tx storefs.WriteTx, p core.Partition, records []core.Record) error {
+	if err := s.dir.Check(tx); err != nil {
+		return fmt.Errorf("store: replace partition %s: %w", p, err)
+	}
+
 	relPath := s.rawStore.BuildRelPath(p)
 	if err := s.rawStore.ReplaceFile(relPath, records); err != nil {
 		return fmt.Errorf("store: replace partition %s: %w", p, err)
@@ -133,43 +121,17 @@ func (s *Store) ReplacePartition(_ context.Context, p core.Partition, records []
 	return nil
 }
 
-// ExclusiveLock acquires an exclusive flock on the partition. Satisfies compaction.PartitionLocker.
-func (s *Store) ExclusiveLock(ctx context.Context, p core.Partition) (func(), error) {
-	relPath := s.rawStore.BuildRelPath(p)
-	guard, err := lockWithContext(ctx, s.partitionLock(relPath).TryExclusiveLock)
-	if err != nil {
-		return nil, fmt.Errorf("store: exclusive lock %s: %w", p, err)
-	}
-	return func() { _ = guard.Release() }, nil
+// WithShared is the way to run operations under a shared transaction.
+func (s *CMDStore) WithShared(ctx context.Context, fn func(tx storefs.Tx) error) error {
+	return s.dir.WithShared(ctx, fn)
 }
 
-// Close closes the raw store and releases the process lock.
-// The index store is owned by the caller and must be closed separately.
-func (s *Store) Close() error {
+// WithExclusive is the way to run operations under an exclusive transaction.
+func (s *CMDStore) WithExclusive(ctx context.Context, fn func(tx storefs.WriteTx) error) error {
+	return s.dir.WithExclusive(ctx, fn)
+}
+
+// Close: incapsulate closing of all rawStore and flock resources.
+func (s *CMDStore) Close() error {
 	return errors.Join(s.rawStore.Close(), s.flock.Release())
-}
-
-func lockWithContext(ctx context.Context, tryLock func() (*flock.Guard, error)) (*flock.Guard, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	ticker := time.NewTicker(lockRetryDelay)
-	defer ticker.Stop()
-
-	for {
-		guard, err := tryLock()
-		switch {
-		case err == nil:
-			return guard, nil
-		case !errors.Is(err, flock.ErrLocked):
-			return nil, err
-		}
-
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-ticker.C:
-		}
-	}
 }

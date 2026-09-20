@@ -10,6 +10,7 @@ import (
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/errs"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 )
 
 func (s *Service) AppendRecord(
@@ -38,7 +39,10 @@ func (s *Service) AppendRecord(
 		record.Data = map[string]any{}
 	}
 
-	if err := s.storage.Append(ctx, record); err != nil {
+	err := s.storage.WithShared(ctx, func(tx storefs.Tx) error {
+		return s.storage.Append(ctx, tx, record)
+	})
+	if err != nil {
 		if errors.Is(err, errs.ErrIndexFailed) {
 			s.logger.ErrorContext(ctx, "meta index failed — record is durable in storage",
 				slog.String("record_id", record.ID),

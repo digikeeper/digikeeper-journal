@@ -8,6 +8,7 @@ import (
 	"github.com/digikeeper/digikeeper-journal/internal/domain/query/model"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/index"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/jsonlstore"
+	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 )
 
 type Store struct {
@@ -17,7 +18,7 @@ type Store struct {
 
 func NewStore(jsonJournalDir string, idx *index.Store) *Store {
 	return &Store{
-		rawStore: jsonlstore.NewJSONLWriter(jsonJournalDir, "journal"),
+		rawStore: jsonlstore.NewJSONLWriter(jsonJournalDir, storefs.JournalKind),
 		idx:      idx,
 	}
 }

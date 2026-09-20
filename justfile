@@ -3,6 +3,11 @@ cmd := "./cmd"
 
 build:
     go build -o {{ bin }}/server {{ cmd }}/server
+    go build -o {{ bin }}/dkbackup {{ cmd }}/dkbackup
+
+# dkbackup reads JOURNAL_STORAGE_PATH and BACKUP_* straight from the environment
+backup *args:
+    go run {{ cmd }}/dkbackup {{ args }}
 
 run:
     DIGIKEEPER_LOAD_DOTENV=true go run {{ cmd }}/server
