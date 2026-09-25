@@ -18,12 +18,12 @@ import (
 const maxJSONLRecordSizeBytes = 10 * 1024 * 1024
 
 type Store struct {
-	dir *storefs.Dir
+	dir *storefs.Root
 }
 
 // New returns a candidate store over an already-open data directory; Open
 // created the areas it writes to.
-func New(dir *storefs.Dir) *Store {
+func New(dir *storefs.Root) *Store {
 	return &Store{dir: dir}
 }
 

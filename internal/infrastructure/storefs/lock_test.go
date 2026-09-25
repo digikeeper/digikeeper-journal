@@ -76,7 +76,7 @@ func TestTransact_ReleasesOnEveryExit(t *testing.T) {
 	require.NoError(t, dir.WithExclusive(quick, func(storefs.WriteTx) error { return nil }))
 }
 
-// TestLock_ContendsAcrossHandles pins the property the scheme rests on: two Dir
+// TestLock_ContendsAcrossHandles pins the property the scheme rests on: two Root
 // values over the same path — in this process or another — really do wait for
 // each other, because the lock is a file lock rather than a mutex.
 func TestLock_ContendsAcrossHandles(t *testing.T) {

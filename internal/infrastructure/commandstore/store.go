@@ -17,7 +17,7 @@ import (
 )
 
 type CMDStore struct {
-	dir      *storefs.Dir
+	dir      *storefs.Root
 	flock    *flock.Lock
 	rawStore *jsonlstore.JSONLWriter
 	idx      *index.Store
@@ -25,7 +25,7 @@ type CMDStore struct {
 
 // NewStore returns a journal store over an storefs; Fixes drift in journal tree
 // and takes server.lock for guarantee single process lifetime.
-func NewStore(dir *storefs.Dir, idx *index.Store) (*CMDStore, error) {
+func NewStore(dir *storefs.Root, idx *index.Store) (*CMDStore, error) {
 	serverLock, err := flock.Acquire(dir.ServerLockPath())
 	if err != nil {
 		return nil, err

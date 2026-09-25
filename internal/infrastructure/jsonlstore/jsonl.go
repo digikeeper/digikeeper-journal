@@ -113,6 +113,11 @@ func (w *JSONLWriter) getOrCreate(relPath string) (*logFD, error) {
 	return lfd, nil
 }
 
+// ReadPartition reads every record in one journal partition.
+func (w *JSONLWriter) ReadPartition(partition core.Partition) ([]core.Record, error) {
+	return w.Read(w.BuildRelPath(partition))
+}
+
 func (w *JSONLWriter) Read(relPath string, opts ...ReadOption) ([]core.Record, error) {
 	var filters ReadFilters
 	for _, o := range opts {

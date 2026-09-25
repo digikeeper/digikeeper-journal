@@ -18,6 +18,14 @@ dkbackup verify    # parse the local JSONL tree; -repair drops a torn trailing l
 dkbackup reindex   # rebuild index.db from the JSONL files (server stopped)
 ```
 
+Configuration is loaded with `cleanenv`. Command-line flags override these environment defaults:
+
+- `JOURNAL_STORAGE_PATH`
+- `BACKUP_REMOTE`, `BACKUP_USER`, `BACKUP_PASSWORD`, `BACKUP_TIMEOUT`, `BACKUP_VERBOSE`
+- `SQLITE_JOURNAL_MODE`, `SQLITE_BUSY_TIMEOUT` for `reindex`
+
+Set `DIGIKEEPER_LOAD_DOTENV=true` to load `.env` before reading the environment.
+
 ## What is dumped, and what is not
 
 The JSONL trees are the source of truth, so they are dumped.
@@ -30,7 +38,7 @@ But:
 
 ## Incremental against the remote
 
-The backup is incremental. Technically, this means the remote holds a `manifest.json` describing the last dump. `push` reads it, compares each local file by size and modification time, and uploads only what differs — the same cheap test that rsync makes.
+The backup is incremental. The remote holds a `manifest.json` describing the last committed dump. `push` first compares size and modification time; possible changes are hashed before upload, so a timestamp-only change does not resend identical content.
 Keeping the manifest on the remote rather than in local state means incremental pushes survive a lost machine: a fresh install pushes correctly against an existing dump.
 
 On the remote, file contents sit under their own prefix, away from control files:
@@ -40,7 +48,7 @@ On the remote, file contents sit under their own prefix, away from control files
 <remote>/data/dk_journal/2026/2026-09-12_journal.jsonl
 ```
 
-Each manifest records the prefix it used, so old dumps stay restorable if that prefix ever changes.
+The `data/` prefix is part of the versioned remote format. A future layout change must introduce a new manifest version and retain a reader for version 1.
 
 ## Consistency
 

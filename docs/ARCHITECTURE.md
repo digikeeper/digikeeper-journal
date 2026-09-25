@@ -34,7 +34,7 @@ err := s.lock.WithExclusive(ctx, func(tx storefs.WriteTx) error {   // exclusive
 
 It is a transaction because only the service knows where the span begins.
 
-Why a closure rather than a returned guard: the lock is released on every exit, including an error return or a panic, and a transaction cannot outlive its span — one captured out of the closure is refused by `Dir.Check`.
+Why a closure rather than a returned guard: the lock is released on every exit, including an error return or a panic, and a transaction cannot outlive its span — one captured out of the closure is refused by `Root.Check`.
 
 Two things remain checked at runtime, because the types cannot carry them:
 

@@ -89,7 +89,7 @@ func TestStoreListMissingFilesReturnsEmpty(t *testing.T) {
 }
 
 // TestStoreSharedLockRespectsContext proves a reader gives up when its context
-// expires while a writer holds the directory. Two Dir handles over one path
+// expires while a writer holds the directory. Two Root handles over one path
 // contend exactly as two processes would, which is what the file lock buys.
 func TestStoreSharedLockRespectsContext(t *testing.T) {
 	t.Parallel()

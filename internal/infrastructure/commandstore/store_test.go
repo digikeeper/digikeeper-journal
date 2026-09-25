@@ -16,7 +16,7 @@ import (
 )
 
 // TestStoreExclusiveLockRespectsContext proves a writer gives up when its
-// context expires while a reader holds the directory. Two Dir handles over one
+// context expires while a reader holds the directory. Two Root handles over one
 // path contend exactly as two processes would.
 func TestStoreExclusiveLockRespectsContext(t *testing.T) {
 	t.Parallel()
