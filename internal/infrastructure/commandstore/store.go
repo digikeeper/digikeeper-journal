@@ -54,7 +54,7 @@ func (s *CMDStore) Append(ctx context.Context, tx storefs.Tx, record core.Record
 	}
 	if err := s.idx.Insert(ctx, index.Row{
 		File:      key,
-		Tags:      record.Tags,
+		Facets:    record.Facets,
 		Types:     []string{record.Type},
 		Timestamp: record.Timestamp,
 	}); err != nil {

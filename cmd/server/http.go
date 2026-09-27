@@ -36,7 +36,7 @@ func newHTTPHandler(cfg Config, logger *slog.Logger, h handlers) http.Handler {
 	registerRoutes(api, h)
 
 	mux.HandleFunc("GET /healthz", healthz.Handle)
-	if cfg.Debug.Enabled {
+	if cfg.Common.DebugEnabled {
 		mux.Handle("/debug/", http.DefaultServeMux)
 		logger.Info("debug endpoints enabled", slog.String("path", "/debug/"))
 	}

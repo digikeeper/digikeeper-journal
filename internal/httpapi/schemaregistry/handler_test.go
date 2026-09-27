@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -13,13 +14,15 @@ import (
 
 	"github.com/digikeeper/digikeeper-journal/internal/httpapi"
 	apisreg "github.com/digikeeper/digikeeper-journal/internal/httpapi/schemaregistry"
+	registry "github.com/digikeeper/digikeeper-journal/internal/schemaregistry"
 )
 
 func setupRegistryServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	h, err := apisreg.NewHandler()
+	schemas, err := registry.Load(os.DirFS("../../../examples/schemas"))
 	require.NoError(t, err)
+	h := apisreg.NewHandler(schemas)
 
 	mux := http.NewServeMux()
 	api := humago.New(mux, httpapi.NewHumaConfig("test", "0.0.0"))

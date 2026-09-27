@@ -8,19 +8,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRecordMeta_UnmarshalLegacySchemaVersion(t *testing.T) {
+func TestRecordMeta_UsesCanonicalFieldNames(t *testing.T) {
 	t.Parallel()
 
-	var meta RecordMeta
-	require.NoError(t, json.Unmarshal([]byte(`{"v":1,"r":2,"s":3}`), &meta))
-	assert.Equal(t, 1, meta.SchemaVersion)
-	assert.Equal(t, 2, meta.Revision)
-	assert.Equal(t, 3, meta.Src)
-
+	meta := RecordMeta{SchemaVersion: 1, Revision: 2, Source: 3}
 	data, err := json.Marshal(meta)
 	require.NoError(t, err)
+
 	var stored map[string]any
 	require.NoError(t, json.Unmarshal(data, &stored))
-	assert.Equal(t, float64(1), stored["sv"])
+	assert.Equal(t, float64(1), stored["schm_ver"])
+	assert.Equal(t, float64(2), stored["rev"])
+	assert.Equal(t, float64(3), stored["src"])
 	assert.NotContains(t, stored, "v")
+	assert.NotContains(t, stored, "schema_version")
+	assert.NotContains(t, stored, "s")
 }

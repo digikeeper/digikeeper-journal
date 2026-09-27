@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://digikeeper.local/schema-for-schemas.json",
+  "title": "Digikeeper record schema",
+  "type": "object",
+  "required": ["$schema", "type", "properties", "required", "additionalProperties"],
+  "properties": {
+    "$schema": {"const": "https://json-schema.org/draft/2020-12/schema"},
+    "type": {"const": "object"},
+    "additionalProperties": {"const": true},
+    "required": {"$ref": "#/$defs/rootRequired"},
+    "properties": {"$ref": "#/$defs/rootProperties"}
+  },
+  "$defs": {
+    "rootRequired": {
+      "$comment": "The four shared input fields are mandatory. Additional required names are currently allowed, so decide whether this list should become exact before adding another server-owned field.",
+      "type": "array",
+      "allOf": [
+        {"contains": {"const": "type"}},
+        {"contains": {"const": "ts"}},
+        {"contains": {"const": "facets"}},
+        {"contains": {"const": "d"}}
+      ]
+    },
+    "rootProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "ts", "facets", "d"],
+      "properties": {
+        "type": {"$ref": "#/$defs/recordTypeSchema"},
+        "ts": {"$ref": "#/$defs/timestampSchema"},
+        "facets": {"$ref": "#/$defs/facetsSchema"},
+        "d": {"$ref": "#/$defs/dataSchema"}
+      }
+    },
+    "recordTypeSchema": {
+      "type": "object",
+      "anyOf": [
+        {"required": ["type"], "properties": {"type": {"const": "string"}}},
+        {"required": ["const"], "properties": {"const": {"type": "string"}}}
+      ]
+    },
+    "timestampSchema": {
+      "type": "object",
+      "required": ["type", "format"],
+      "properties": {
+        "type": {"const": "string"},
+        "format": {"const": "date-time"}
+      }
+    },
+    "facetsSchema": {
+      "type": "object",
+      "required": ["type", "additionalProperties"],
+      "properties": {
+        "type": {"const": "object"},
+        "additionalProperties": {
+          "type": "object",
+          "required": ["type", "items"],
+          "properties": {
+            "type": {"const": "array"},
+            "items": {"$ref": "#/$defs/stringSchema"}
+          }
+        }
+      }
+    },
+    "stringSchema": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {"type": {"const": "string"}}
+    },
+    "dataSchema": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {"type": {"const": "object"}}
+    }
+  }
+}

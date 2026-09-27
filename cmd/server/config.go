@@ -11,7 +11,8 @@ import (
 )
 
 type CommonConfig struct {
-	EnvName string `env:"ENVIRONMENT_NAME" env-default:"dev"`
+	EnvName      string `env:"ENVIRONMENT_NAME" env-default:"dev"`
+	DebugEnabled bool   `env:"DEBUG_ENABLED" env-default:"false"`
 }
 
 type APIConfig struct {
@@ -29,16 +30,11 @@ type SQLiteConfig struct {
 	BusyTimeout time.Duration `env:"BUSY_TIMEOUT" env-default:"5s"`
 }
 
-type DebugConfig struct {
-	Enabled bool `env:"ENABLED" env-default:"false"`
-}
-
 type Config struct {
 	Common         CommonConfig         `yaml:"common"`
 	JournalStorage JournalStorageConfig `yaml:"journal_storage" env-prefix:"JOURNAL_STORAGE_"`
 	SQLite         SQLiteConfig         `yaml:"sqlite" env-prefix:"SQLITE_"`
 	API            APIConfig            `yaml:"api" env-prefix:"API_"`
-	Debug          DebugConfig          `yaml:"debug" env-prefix:"DEBUG_"`
 }
 
 func (c *Config) IsDevEnv() bool {

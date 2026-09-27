@@ -24,11 +24,12 @@ func NewCandidateHandler(svc *domainCandidate.Service) *CandidateHandler {
 type SubmitCandidateInput struct {
 	ClientID string `header:"X-Client-Id" doc:"Client identifier for audit"`
 	Body     struct {
-		RecordID          string         `json:"record_id" required:"true"`
-		OriginalTimestamp time.Time      `json:"original_timestamp" required:"true"`
-		Type              string         `json:"type"`
-		Tags              []string       `json:"tags"`
-		Data              map[string]any `json:"data"`
+		RecordID          string              `json:"rec_id" required:"true"`
+		OriginalTimestamp time.Time           `json:"orig_ts" required:"true"`
+		Type              string              `json:"type"`
+		SchemaVersion     *int                `json:"schm_ver,omitempty"`
+		Facets            map[string][]string `json:"facets"`
+		Data              map[string]any      `json:"d"`
 	}
 }
 
@@ -36,20 +37,24 @@ func (i *SubmitCandidateInput) Resolve(ctx huma.Context) []error {
 	var errs []error
 	if i.Body.RecordID == "" {
 		errs = append(errs, &huma.ErrorDetail{
-			Location: "body.record_id",
-			Message:  "'record_id' is required",
+			Location: "body.rec_id",
+			Message:  "'rec_id' is required",
 		})
 	}
 	if i.Body.OriginalTimestamp.IsZero() {
 		errs = append(errs, &huma.ErrorDetail{
-			Location: "body.original_timestamp",
-			Message:  "'original_timestamp' is required",
+			Location: "body.orig_ts",
+			Message:  "'orig_ts' is required",
 		})
 	}
-	if len(i.Body.Tags) == 0 && len(i.Body.Data) == 0 {
-		errs = append(errs, &huma.ErrorDetail{
-			Message: "at least one of 'tags' or 'data' must be provided",
-		})
+	if i.Body.Type == "" {
+		errs = append(errs, &huma.ErrorDetail{Location: "body.type", Message: "'type' is required"})
+	}
+	if i.Body.Facets == nil {
+		errs = append(errs, &huma.ErrorDetail{Location: "body.facets", Message: "'facets' is required"})
+	}
+	if i.Body.Data == nil {
+		errs = append(errs, &huma.ErrorDetail{Location: "body.d", Message: "'d' is required"})
 	}
 	if len(errs) == 0 {
 		return nil
@@ -73,7 +78,8 @@ func (h *CandidateHandler) SubmitCandidate(
 		RecordID:          input.Body.RecordID,
 		OriginalTimestamp: input.Body.OriginalTimestamp,
 		Type:              input.Body.Type,
-		Tags:              input.Body.Tags,
+		SchemaVersion:     input.Body.SchemaVersion,
+		Facets:            input.Body.Facets,
 		Data:              input.Body.Data,
 		ClientID:          input.ClientID,
 	}, sloghttp.GetRequestIDFromContext(ctx))

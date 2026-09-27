@@ -20,7 +20,8 @@ type PragmaKey string
 const (
 	// PragmaJournalMode configures SQLite journal mode.
 	PragmaJournalMode PragmaKey = "journal_mode"
-	// PragmaBusyTimeout configures SQLite lock wait timeout in milliseconds.
+	// PragmaBusyTimeout sets how long SQLite waits for a locked database before
+	// returning SQLITE_BUSY. The value is in milliseconds, per connection.
 	PragmaBusyTimeout PragmaKey = "busy_timeout"
 	// PragmaForeignKeys configures SQLite foreign key enforcement.
 	PragmaForeignKeys PragmaKey = "foreign_keys"

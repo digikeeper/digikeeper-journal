@@ -4,6 +4,7 @@ import (
 	stdjson "encoding/json"
 	jsonv2 "encoding/json/v2"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,9 +20,9 @@ var (
 )
 
 type benchProfile struct {
-	name      string
-	tags      int
-	dataBytes int
+	name        string
+	facetValues int
+	dataBytes   int
 }
 
 type benchData struct {
@@ -149,9 +150,9 @@ func buildBenchData(b *testing.B) benchData {
 	profile := resolveBenchProfile()
 
 	ts := time.Date(2026, 3, 1, 12, 30, 45, 0, time.UTC)
-	tags := make([]string, profile.tags)
-	for i := range tags {
-		tags[i] = "tag-" + strconv.Itoa(i)
+	tagValues := make([]string, profile.facetValues)
+	for i := range tagValues {
+		tagValues[i] = "tag-" + strconv.Itoa(i)
 	}
 
 	payload := strings.Repeat("x", profile.dataBytes)
@@ -164,7 +165,7 @@ func buildBenchData(b *testing.B) benchData {
 		RequestID: "bench-request",
 		CreatedAt: ts.Add(15 * time.Second),
 		Timestamp: ts,
-		Tags:      tags,
+		Facets:    map[string][]string{"tag": tagValues},
 		Data: map[string]any{
 			"note":    "benchmark",
 			"payload": payload,
@@ -181,7 +182,7 @@ func buildBenchData(b *testing.B) benchData {
 		b.Fatalf("jsonv2 marshal bench data: %v", err)
 	}
 
-	matchTag := tags[len(tags)/2]
+	matchValue := tagValues[len(tagValues)/2]
 	from := ts.Add(-1 * time.Hour)
 	to := ts.Add(1 * time.Hour)
 
@@ -189,14 +190,14 @@ func buildBenchData(b *testing.B) benchData {
 		record: record,
 		line:   line,
 		filtersMatch: ReadFilters{
-			From: from,
-			To:   to,
-			Tags: map[string]struct{}{matchTag: {}},
+			From:   from,
+			To:     to,
+			Facets: map[string][]string{"tag": {matchValue}},
 		},
 		filtersNoMatch: ReadFilters{
-			From: from,
-			To:   to,
-			Tags: map[string]struct{}{"tag-not-found": {}},
+			From:   from,
+			To:     to,
+			Facets: map[string][]string{"tag": {"tag-not-found"}},
 		},
 	}
 }
@@ -204,21 +205,21 @@ func buildBenchData(b *testing.B) benchData {
 func resolveBenchProfile() benchProfile {
 	// Tune with env vars:
 	// JSONL_BENCH_PROFILE=small|medium|large
-	// JSONL_BENCH_TAGS=<int>
+	// JSONL_BENCH_FACET_VALUES=<int>
 	// JSONL_BENCH_DATA_BYTES=<int>
 	profileName := strings.ToLower(strings.TrimSpace(os.Getenv("JSONL_BENCH_PROFILE")))
-	// Based on provided production shape: tags are in [1..9], median ~= 2.
-	profile := benchProfile{name: "medium", tags: 2, dataBytes: 2048}
+	// Based on provided production shape: facet values are in [1..9], median ~= 2.
+	profile := benchProfile{name: "medium", facetValues: 2, dataBytes: 2048}
 
 	switch profileName {
 	case "small":
-		profile = benchProfile{name: "small", tags: 1, dataBytes: 256}
+		profile = benchProfile{name: "small", facetValues: 1, dataBytes: 256}
 	case "large":
-		profile = benchProfile{name: "large", tags: 9, dataBytes: 32768}
+		profile = benchProfile{name: "large", facetValues: 9, dataBytes: 32768}
 	}
 
-	if n := readPositiveEnvInt("JSONL_BENCH_TAGS"); n > 0 {
-		profile.tags = capTagsCount(n)
+	if n := readPositiveEnvInt("JSONL_BENCH_FACET_VALUES"); n > 0 {
+		profile.facetValues = capFacetValuesCount(n)
 	}
 	if n := readPositiveEnvInt("JSONL_BENCH_DATA_BYTES"); n > 0 {
 		profile.dataBytes = n
@@ -239,7 +240,7 @@ func readPositiveEnvInt(key string) int {
 	return n
 }
 
-func capTagsCount(n int) int {
+func capFacetValuesCount(n int) int {
 	if n < 1 {
 		return 1
 	}
@@ -251,24 +252,24 @@ func capTagsCount(n int) int {
 
 func matchFiltersBy2FieldUnmarshalJSONV2(line []byte, f *ReadFilters) bool {
 	var obj struct {
-		Timestamp time.Time `json:"ts"`
-		Tags      []string  `json:"tags"`
+		Timestamp time.Time           `json:"ts"`
+		Facets    map[string][]string `json:"facets"`
 	}
 	if err := jsonv2.Unmarshal(line, &obj); err != nil {
 		return false
 	}
-	return isMatchParsed(obj.Timestamp, obj.Tags, f)
+	return isMatchParsed(obj.Timestamp, obj.Facets["tag"], f)
 }
 
 func matchFiltersBy2FieldUnmarshalStdJSON(line []byte, f *ReadFilters) bool {
 	var obj struct {
-		Timestamp time.Time `json:"ts"`
-		Tags      []string  `json:"tags"`
+		Timestamp time.Time           `json:"ts"`
+		Facets    map[string][]string `json:"facets"`
 	}
 	if err := stdjson.Unmarshal(line, &obj); err != nil {
 		return false
 	}
-	return isMatchParsed(obj.Timestamp, obj.Tags, f)
+	return isMatchParsed(obj.Timestamp, obj.Facets["tag"], f)
 }
 
 func matchFiltersByFullUnmarshalJSONV2(line []byte, f *ReadFilters) bool {
@@ -276,7 +277,7 @@ func matchFiltersByFullUnmarshalJSONV2(line []byte, f *ReadFilters) bool {
 	if err := jsonv2.Unmarshal(line, &e); err != nil {
 		return false
 	}
-	return isMatchParsed(e.Timestamp, e.Tags, f)
+	return isMatchParsed(e.Timestamp, e.Facets["tag"], f)
 }
 
 func matchFiltersByFullUnmarshalStdJSON(line []byte, f *ReadFilters) bool {
@@ -284,10 +285,10 @@ func matchFiltersByFullUnmarshalStdJSON(line []byte, f *ReadFilters) bool {
 	if err := stdjson.Unmarshal(line, &e); err != nil {
 		return false
 	}
-	return isMatchParsed(e.Timestamp, e.Tags, f)
+	return isMatchParsed(e.Timestamp, e.Facets["tag"], f)
 }
 
-func isMatchParsed(ts time.Time, tags []string, f *ReadFilters) bool {
+func isMatchParsed(ts time.Time, tagValues []string, f *ReadFilters) bool {
 	if !f.From.IsZero() && ts.Before(f.From) {
 		return false
 	}
@@ -295,11 +296,12 @@ func isMatchParsed(ts time.Time, tags []string, f *ReadFilters) bool {
 		return false
 	}
 
-	if len(f.Tags) == 0 {
+	wanted := f.Facets["tag"]
+	if len(wanted) == 0 {
 		return true
 	}
-	for _, t := range tags {
-		if _, ok := f.Tags[t]; ok {
+	for _, v := range tagValues {
+		if slices.Contains(wanted, v) {
 			return true
 		}
 	}

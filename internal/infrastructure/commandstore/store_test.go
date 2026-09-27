@@ -59,7 +59,7 @@ func TestStoreReadRecord(t *testing.T) {
 			ID:        "record-a",
 			Timestamp: time.Date(2026, 3, 8, 10, 0, 0, 0, time.UTC),
 			Type:      "note",
-			Tags:      []string{"work"},
+			Facets:    map[string][]string{"tag": {"work"}},
 			Data:      map[string]any{"note": "test"},
 		}
 		require.NoError(t, store.Append(ctx, tx, want))

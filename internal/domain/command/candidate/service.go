@@ -10,27 +10,29 @@ import (
 )
 
 type Storage interface {
-	// WithShared is sufficient for reading operations.
 	WithShared(ctx context.Context, fn func(tx storefs.Tx) error) error
-	// WithExclusive is sufficient for multiple partition actions.
 	WithExclusive(ctx context.Context, fn func(tx storefs.WriteTx) error) error
 	AppendCandidate(ctx context.Context, tx storefs.Tx, c model.Candidate) error
 	ListPending(ctx context.Context, tx storefs.Tx, partition core.Partition) ([]model.Candidate, error)
 	MoveCandidates(ctx context.Context, tx storefs.WriteTx, partition core.Partition, applied, denied []model.Candidate) error
 }
 
-// JournalStorage reads existing journal records to verify the original exists.
 type JournalStorage interface {
 	ReadRecord(ctx context.Context, tx storefs.Tx, recordID string, partition core.Partition) (core.Record, error)
 }
 
-// Service handles candidate commands: submit and resolve.
+type SchemaRegistry interface {
+	LatestVersion(typeName string) (int, error)
+	Validate(typeName string, version int, record core.Record) error
+}
+
 type Service struct {
 	storage        Storage
 	journalStorage JournalStorage
+	schemas        SchemaRegistry
 	logger         *slog.Logger
 }
 
-func NewService(s Storage, ls JournalStorage, logger *slog.Logger) *Service {
-	return &Service{storage: s, journalStorage: ls, logger: logger}
+func NewService(s Storage, ls JournalStorage, schemas SchemaRegistry, logger *slog.Logger) *Service {
+	return &Service{storage: s, journalStorage: ls, schemas: schemas, logger: logger}
 }

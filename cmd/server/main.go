@@ -23,6 +23,7 @@ import (
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/querystore"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/sourcerepo"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
+	registry "github.com/digikeeper/digikeeper-journal/internal/schemaregistry"
 )
 
 func main() {
@@ -48,6 +49,20 @@ func run() error {
 		return fmt.Errorf("open data directory: %w", err)
 	}
 	defer func() { _ = store.Close() }()
+	if store.FirstRun() {
+		if err := registry.SeedDefaultNote(store.SchemaDir()); err != nil {
+			return fmt.Errorf("seed default note schema: %w", err)
+		}
+	}
+
+	schemaFS, err := store.SchemaFS()
+	if err != nil {
+		return fmt.Errorf("open schema directory: %w", err)
+	}
+	schemas, err := registry.Load(schemaFS)
+	if err != nil {
+		return fmt.Errorf("init schema registry: %w", err)
+	}
 
 	idx, err := index.NewIdx(store.IndexPath(), index.Config{
 		JournalMode: cfg.SQLite.JournalMode,
@@ -66,7 +81,7 @@ func run() error {
 
 	candidateStore := candidatestore.New(store)
 
-	qryStore := querystore.NewStore(store.JournalDir(), idx)
+	qryStore := querystore.NewStore(store, idx)
 
 	// Sources
 	srcRepo, err := sourcerepo.New()
@@ -75,9 +90,9 @@ func run() error {
 	}
 
 	// Services
-	cmdSvc := command.NewService(journalStore, srcRepo, logger)
+	cmdSvc := command.NewService(journalStore, srcRepo, schemas, logger)
 	candidateSvc := domainCandidate.NewService(
-		candidateStore, journalStore, logger,
+		candidateStore, journalStore, schemas, logger,
 	)
 	compactionSvc := domainCompaction.NewService(
 		journalStore, candidateStore, idx, journalStore, logger,
@@ -89,10 +104,7 @@ func run() error {
 	candidateHandler := apicmd.NewCandidateHandler(candidateSvc)
 	compactionHandler := apicmd.NewCompactionHandler(compactionSvc)
 	qryHandler := apiqry.NewHandler(qrySvc, srcRepo.ResolveName)
-	sregHandler, err := apisreg.NewHandler()
-	if err != nil {
-		return fmt.Errorf("init schema registry: %w", err)
-	}
+	sregHandler := apisreg.NewHandler(schemas)
 
 	// API
 	handler := newHTTPHandler(cfg, logger, handlers{

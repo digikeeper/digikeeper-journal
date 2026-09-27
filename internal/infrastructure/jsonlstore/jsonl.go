@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -37,9 +38,9 @@ type logFD struct {
 }
 
 type ReadFilters struct {
-	From time.Time
-	To   time.Time
-	Tags map[string]struct{}
+	From   time.Time
+	To     time.Time
+	Facets map[string][]string
 }
 
 type ReadOption func(*ReadFilters)
@@ -48,13 +49,11 @@ func WithTimeRange(from, to time.Time) ReadOption {
 	return func(f *ReadFilters) { f.From = from; f.To = to }
 }
 
-func WithTags(tags ...string) ReadOption {
-	return func(f *ReadFilters) {
-		f.Tags = make(map[string]struct{}, len(tags))
-		for _, t := range tags {
-			f.Tags[t] = struct{}{}
-		}
-	}
+// WithFacets restricts results to records matching every requested facet
+// key (AND across keys); a key matches if the record has any one of the
+// requested values for it (OR within a key).
+func WithFacets(facets map[string][]string) ReadOption {
+	return func(f *ReadFilters) { f.Facets = facets }
 }
 
 func NewJSONLWriter(dir, fileType string) *JSONLWriter {
@@ -119,7 +118,7 @@ func (w *JSONLWriter) Read(relPath string, opts ...ReadOption) ([]core.Record, e
 	for _, o := range opts {
 		o(&filters)
 	}
-	hasFilters := len(filters.Tags) > 0 || !filters.From.IsZero() || !filters.To.IsZero()
+	hasFilters := len(filters.Facets) > 0 || !filters.From.IsZero() || !filters.To.IsZero()
 
 	fpath := filepath.Join(w.dir, relPath)
 	f, err := os.Open(fpath)
@@ -161,14 +160,14 @@ func matchFilters(line []byte, f *ReadFilters) bool {
 			return false
 		}
 	}
-	if len(f.Tags) > 0 {
-		tagsResult := gjson.GetBytes(line, "tags")
-		if !tagsResult.Exists() {
-			return false
+	for key, values := range f.Facets {
+		if len(values) == 0 {
+			continue
 		}
+		actual := gjson.GetBytes(line, "facets."+key)
 		matched := false
-		tagsResult.ForEach(func(_, v gjson.Result) bool {
-			if _, ok := f.Tags[v.String()]; ok {
+		actual.ForEach(func(_, v gjson.Result) bool {
+			if slices.Contains(values, v.String()) {
 				matched = true
 				return false
 			}
