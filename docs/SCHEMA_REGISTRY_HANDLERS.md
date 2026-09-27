@@ -3,17 +3,20 @@
 ## Description
 
 Schema registry handlers expose supported record schemas over HTTP.
-They live in `internal/httpapi/schemaregistry` and are wired from `cmd/server`.
+They live in `internal/httpapi/schemaregistry` and are wired from `cmd/server`; the
+loading and validation logic lives in `internal/schemaregistry`.
 
 Endpoints:
 
 - `GET /v1/registry` returns schema type summaries with their latest and available versions.
-- `GET /v1/registry/{type}/schema` returns the latest schema for a record type.
-- `GET /v1/registry/{type}/instruction` returns the latest type instruction for a record type.
-- `GET /v1/registry/{type}/{version}/schema` and `GET /v1/registry/{type}/{version}/instruction` return the schema/instructions for a version.
+- `GET /v1/registry/{type}` returns the latest schema and instructions for a record type.
+- `GET /v1/registry/{type}/{version}` returns the schema and instructions for a specific version.
 
-Schemas are JSON files in `internal/httpapi/schemaregistry/{type}`. The handler embeds
-and loads them at startup, retaining each schema as `json.RawMessage`.
+Schemas are JSONSchema files under the data directory's `schemas/{type}/v{version}/` (see
+`storefs.SchemaDir`).
+`internal/schemaregistry.Load` reads them at startup into a `Registry`. On first run, `SeedDefaultNote` copies an embedded default
+`note/v1` into a newly created schema directory so a new instance has a usable
+type; it never overwrites a user-owned file.
 
 Schema and instruction files use this required path format: `{type}/v{version}/<schema.json|instructions.md>`
 
@@ -31,10 +34,10 @@ A schema identity is `(type, version)`. Published schema files are immutable: ad
 file for a changed schema instead of modifying an existing version.
 A published `(type, version)` includes both files: json schema and instructions, and both are immutable once published.
 
-A record persists its schema version in `m.sv`.
+A record persists its schema version in `m.schm_ver`.
 This identifies the exact registry schema needed to interpret that record; it never means "latest".
 
-Record metadata also contains `m.r`, its logical revision. It does not correlate directly with the schema version.
+Record metadata also contains `m.rev`, its logical revision. It does not correlate directly with the schema version.
 
 ## Why It Exists
 
@@ -43,11 +46,13 @@ Serving schemas from the running service keeps clients aligned with the deployed
 
 ## Boundaries
 
-The schema registry is read-only application metadata, not user data. Schema changes go
-through code review and deployment.
+The schema registry is user-owned, per-instance metadata: each data directory has its own
+`schemas/` tree, edited directly on disk rather than through the API. The HTTP handlers
+are read-only — they discover and serve whatever `internal/schemaregistry.Load` found at
+startup — but the underlying files are not fixed at deploy time the way the code is.
 
-The handler stays in `internal/httpapi` because it has no business workflow or mutable
-storage. If schemas become editable or user-specific, this package should be revised.
+The HTTP handlers stays a thin `internal/httpapi` wrapper because it has no business
+workflow: loading, validation, and default live in `internal/schemaregistry`.
 
 ## Instructions
 

@@ -100,6 +100,21 @@ Domain enums drive storage names:
 - `core.CandidateStates()` lists the states a candidate can be in, and `storefs` maps each to a directory.
 - `command/model.CandidateResolution.EndState()` says where a resolved candidate comes to rest. A state added to the domain without a directory fails a test instead of silently writing candidates nowhere. The mapping is spelled out rather than derived from the constant's string, so renaming a domain constant cannot silently move data on disk.
 
+## Record Shape
+
+```json
+{
+  "id": "...", "request_id": "...", "created_at": "...",
+  "type": "note",
+  "ts": "2026-03-08T10:00:00Z",
+  "facets": {"topic": ["work", "health"]},
+  "m": {"schm_ver": 1, "rev": 1, "src": 0},
+  "d": {"note": "..."}
+}
+```
+
+`facets` is a common top-level field (like `id`, `type`, `ts`, `d`) present on every record regardless of type — a map of keyed, multi-value tags (e.g. `topic: [work, health]`), not a flat tag list. It drives both search filtering (`internal/domain/query/search.go`) and the `facet[key]=value` query-string syntax. `d` is the only field whose shape is type-specific, and is what `schema.json` constrains (see [Schema Registry Handlers](SCHEMA_REGISTRY_HANDLERS.md)).
+
 ## Observability
 - RequestID in every JSONL record + `X-Request-ID` header
 - `slog.JSONHandler` structured logging
