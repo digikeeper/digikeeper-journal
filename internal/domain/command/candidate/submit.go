@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
-
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/command/model"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
@@ -16,7 +15,7 @@ import (
 
 // Submit creates a schema-validated candidate replacement for an existing journal record.
 func (s *Service) Submit(ctx context.Context, req SubmitRequest, requestID string) (model.Candidate, error) {
-	candidateID := uuid.NewString()
+	candidateID := uuid.NewV7().String()
 	partition := core.PartitionFromTime(req.OriginalTimestamp)
 	var c model.Candidate
 	err := s.storage.WithShared(ctx, func(tx storefs.Tx) error {

@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
-
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
 	"github.com/digikeeper/digikeeper-journal/internal/domain/errs"
@@ -20,7 +19,7 @@ func (s *Service) AppendRecord(ctx context.Context, req AppendRequest, requestID
 		return core.Record{}, fmt.Errorf("append schema: %w: %w", err, errs.ErrInvalidInput)
 	}
 	record := core.Record{
-		ID: uuid.NewString(), Type: req.Type,
+		ID: uuid.NewV7().String(), Type: req.Type,
 		Meta:      core.RecordMeta{SchemaVersion: version, Revision: 1, Source: s.sourceRepo.ResolveID(req.ClientID)},
 		RequestID: requestID, CreatedAt: time.Now().UTC(), Timestamp: req.Timestamp,
 		Facets: req.Facets, Data: req.Data,
