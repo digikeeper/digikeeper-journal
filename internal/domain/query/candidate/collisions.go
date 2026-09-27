@@ -11,7 +11,7 @@ import (
 
 // Collision represents a record that has unresolved candidates.
 type Collision struct {
-	RecordID   string            `json:"record_id"`
+	RecordID   string            `json:"rec_id"`
 	Partition  core.Partition    `json:"partition"`
 	Candidates []model.Candidate `json:"candidates"`
 }

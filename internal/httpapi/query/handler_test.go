@@ -20,16 +20,10 @@ func TestQueryInputResolve(t *testing.T) {
 		{
 			name: "valid filters",
 			input: QueryInput{
-				Tags:  []string{"fitness", "health"},
 				Types: []string{"note", "exercise"},
 				From:  mustParseQueryTime(t, "2026-03-08T00:00:00Z"),
 				To:    mustParseQueryTime(t, "2026-03-09T00:00:00Z"),
 			},
-		},
-		{
-			name:          "blank tag is invalid",
-			input:         QueryInput{Tags: []string{"  "}},
-			wantLocations: []string{"query.tag"},
 		},
 		{
 			name:          "empty type is invalid",
@@ -47,12 +41,11 @@ func TestQueryInputResolve(t *testing.T) {
 		{
 			name: "returns all validation errors",
 			input: QueryInput{
-				Tags:  []string{""},
 				Types: []string{" "},
 				From:  mustParseQueryTime(t, "2026-03-09T00:00:00Z"),
 				To:    mustParseQueryTime(t, "2026-03-08T00:00:00Z"),
 			},
-			wantLocations: []string{"query.from", "query.tag", "query.type"},
+			wantLocations: []string{"query.from", "query.type"},
 		},
 	}
 

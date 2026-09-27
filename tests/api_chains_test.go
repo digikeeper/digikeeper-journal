@@ -15,8 +15,8 @@ func TestPostThenGet(t *testing.T) {
 
 	// act POST
 	for _, postBody := range []string{
-		`{"type":"note","timestamp":"2026-03-08T14:30:00Z","tags":["fitness","health"],"data":{"exercise":"running"}}`,
-		`{"type":"note","timestamp":"2026-03-08T14:29:00Z","tags":["health"],"data":{"exercise":"pre-running"}}`,
+		`{"type":"note","ts":"2026-03-08T14:30:00Z","facets":{"topic":["fitness","health"]},"d":{"note":"running"}}`,
+		`{"type":"note","ts":"2026-03-08T14:29:00Z","facets":{"topic":["health"]},"d":{"note":"pre-running"}}`,
 	} {
 		postResp := postJSON(t, srv.URL+"/v1/journal", postBody)
 		defer closeResponseBody(t, postResp)
@@ -27,7 +27,7 @@ func TestPostThenGet(t *testing.T) {
 	}
 
 	// act GET
-	getResp := getURL(t, srv.URL+"/v1/journal?tag=fitness")
+	getResp := getURL(t, srv.URL+"/v1/journal?facet[topic]=fitness")
 	defer closeResponseBody(t, getResp)
 
 	require.Equal(t, http.StatusOK, getResp.StatusCode)
@@ -44,8 +44,8 @@ func TestPostThenGet(t *testing.T) {
 	assert.Len(t, getResult.Data, 1)
 	found = &getResult.Data[0]
 
-	assert.Contains(t, found.Attributes.Tags, "fitness")
-	assert.Equal(t, "running", found.Attributes.Data["exercise"])
+	assert.Contains(t, found.Attributes.Facets["topic"], "fitness")
+	assert.Equal(t, "running", found.Attributes.Data["note"])
 	assert.Equal(t, "2026-03-08T14:30:00Z", found.Attributes.Timestamp)
 }
 
@@ -53,13 +53,13 @@ func TestCandidateResolveAndCompactFlow(t *testing.T) {
 	srv := setupTestServer(t)
 
 	appendResp := postJSON(t, srv.URL+"/v1/journal",
-		`{"type":"note","timestamp":"2026-03-08T10:00:00Z","tags":["work"],"data":{"note":"original"}}`)
+		`{"type":"note","ts":"2026-03-08T10:00:00Z","facets":{"topic":["work"]},"d":{"note":"original"}}`)
 	defer closeResponseBody(t, appendResp)
 	require.Equal(t, http.StatusCreated, appendResp.StatusCode)
 	var appended singleResponse
 	require.NoError(t, jsonx.UnmarshalRead(appendResp.Body, &appended))
 
-	submitBody := `{"record_id":"` + appended.Data.ID + `","original_timestamp":"2026-03-08T10:00:00Z","type":"note","tags":["corrected"],"data":{"note":"corrected text"}}`
+	submitBody := `{"rec_id":"` + appended.Data.ID + `","orig_ts":"2026-03-08T10:00:00Z","type":"note","facets":{"topic":["corrected"]},"d":{"note":"corrected text"}}`
 	submitResp := postJSONWithHeaders(t, srv.URL+"/v1/candidates", submitBody, map[string]string{
 		"X-Client-Id": "mobile",
 	})
@@ -97,7 +97,7 @@ func TestCandidateResolveAndCompactFlow(t *testing.T) {
 	defer closeResponseBody(t, compactResp)
 	require.Equal(t, http.StatusOK, compactResp.StatusCode)
 
-	queryResp := getURL(t, srv.URL+"/v1/journal?tag=corrected")
+	queryResp := getURL(t, srv.URL+"/v1/journal?facet[topic]=corrected")
 	defer closeResponseBody(t, queryResp)
 	require.Equal(t, http.StatusOK, queryResp.StatusCode)
 	var queried listResponse

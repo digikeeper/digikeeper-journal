@@ -146,7 +146,7 @@ func testCandidate(id, recordID string) commandmodel.Candidate {
 			ID:        recordID,
 			Timestamp: ts,
 			Type:      "note",
-			Tags:      []string{"work"},
+			Facets:    map[string][]string{"tag": {"work"}},
 			Data:      map[string]any{"note": id},
 		},
 		CreatedAt: ts,

@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,6 +30,7 @@ import (
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/sourcerepo"
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 	"github.com/digikeeper/digikeeper-journal/internal/jsonx"
+	registry "github.com/digikeeper/digikeeper-journal/internal/schemaregistry"
 )
 
 // --- test-local JSON:API response types ---
@@ -52,19 +55,19 @@ type resourceObject struct {
 }
 
 type recordAttrs struct {
-	Type      string         `json:"type"`
-	Meta      recordMeta     `json:"meta"`
-	RequestID string         `json:"request_id"`
-	CreatedAt string         `json:"created_at"`
-	Timestamp string         `json:"timestamp"`
-	Tags      []string       `json:"tags"`
-	Data      map[string]any `json:"data"`
+	Type      string              `json:"type"`
+	Meta      recordMeta          `json:"m"`
+	RequestID string              `json:"request_id"`
+	CreatedAt string              `json:"created_at"`
+	Timestamp string              `json:"ts"`
+	Facets    map[string][]string `json:"facets"`
+	Data      map[string]any      `json:"d"`
 }
 
 type recordMeta struct {
-	SchemaVersion int    `json:"schema_version"`
-	Revision      int    `json:"revision"`
-	Source        string `json:"source"`
+	SchemaVersion int    `json:"schm_ver"`
+	Revision      int    `json:"rev"`
+	Source        string `json:"src"`
 }
 
 type candidateResponse struct {
@@ -83,8 +86,8 @@ type candidateResourceObject struct {
 }
 
 type candidateAttrs struct {
-	RecordID          string          `json:"record_id"`
-	OriginalTimestamp string          `json:"original_timestamp"`
+	RecordID          string          `json:"rec_id"`
+	OriginalTimestamp string          `json:"orig_ts"`
 	Record            candidateRecord `json:"record"`
 	CreatedAt         string          `json:"created_at"`
 	Action            string          `json:"action"`
@@ -94,10 +97,19 @@ type candidateAttrs struct {
 }
 
 type candidateRecord struct {
-	ID   string         `json:"id"`
-	Type string         `json:"type"`
-	Tags []string       `json:"tags"`
-	Data map[string]any `json:"d"`
+	ID     string              `json:"id"`
+	Type   string              `json:"type"`
+	Facets map[string][]string `json:"facets"`
+	Data   map[string]any      `json:"d"`
+}
+
+func writeTestSchema(t *testing.T, schemaDir string) {
+	t.Helper()
+	dir := filepath.Join(schemaDir, "note", "v1")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	schema := `{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":true,"required":["type","ts","facets","d"],"properties":{"type":{"const":"note"},"ts":{"type":"string","format":"date-time"},"facets":{"type":"object","additionalProperties":{"type":"array","items":{"type":"string"}}},"d":{"type":"object","additionalProperties":false,"required":["note"],"properties":{"note":{"type":"string","minLength":1}}}}}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "schema.json"), []byte(schema), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "instructions.md"), []byte("# Test note\n"), 0o644))
 }
 
 func setupTestServer(t *testing.T) *httptest.Server {
@@ -105,6 +117,12 @@ func setupTestServer(t *testing.T) *httptest.Server {
 
 	dir, err := storefs.Open(t.TempDir())
 	require.NoError(t, err, "open data dir")
+
+	writeTestSchema(t, dir.SchemaDir())
+	schemaFS, err := dir.SchemaFS()
+	require.NoError(t, err, "open schema directory")
+	schemas, err := registry.Load(schemaFS)
+	require.NoError(t, err, "init schema registry")
 
 	idx, err := index.NewIdx(dir.IndexPath(), index.Config{})
 	require.NoError(t, err, "init index")
@@ -116,15 +134,15 @@ func setupTestServer(t *testing.T) *httptest.Server {
 
 	candidateStore := candidatestore.New(dir)
 
-	qryStore := querystore.NewStore(dir.JournalDir(), idx)
+	qryStore := querystore.NewStore(dir, idx)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	srcRepo, err := sourcerepo.New()
 	require.NoError(t, err, "init sources")
 
-	cmdSvc := command.NewService(journalStore, srcRepo, logger)
-	candidateSvc := domainCandidate.NewService(candidateStore, journalStore, logger)
+	cmdSvc := command.NewService(journalStore, srcRepo, schemas, logger)
+	candidateSvc := domainCandidate.NewService(candidateStore, journalStore, schemas, logger)
 	compactionSvc := domainCompaction.NewService(journalStore, candidateStore, idx, journalStore, logger)
 	qrySvc := query.NewService(qryStore, qryStore, logger)
 
@@ -132,8 +150,7 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	candidateHandler := apicmd.NewCandidateHandler(candidateSvc)
 	compactionHandler := apicmd.NewCompactionHandler(compactionSvc)
 	qryHandler := apiqry.NewHandler(qrySvc, srcRepo.ResolveName)
-	sregHandler, err := apisreg.NewHandler()
-	require.NoError(t, err, "init schema registry")
+	sregHandler := apisreg.NewHandler(schemas)
 
 	mux := http.NewServeMux()
 	api := humago.New(mux, httpapi.NewHumaConfig("Digikeeper Journal", "1.0.0"))
@@ -260,7 +277,7 @@ func closeResponseBody(t *testing.T, resp *http.Response) {
 func appendTestRecord(t *testing.T, srv *httptest.Server) string {
 	t.Helper()
 	resp := postJSON(t, srv.URL+"/v1/journal",
-		`{"type":"note","timestamp":"2026-03-08T10:00:00Z","tags":["work"],"data":{"note":"original"}}`)
+		`{"type":"note","ts":"2026-03-08T10:00:00Z","facets":{"topic":["work"]},"d":{"note":"original"}}`)
 	defer closeResponseBody(t, resp)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	var appended singleResponse
@@ -268,10 +285,10 @@ func appendTestRecord(t *testing.T, srv *httptest.Server) string {
 	return appended.Data.ID
 }
 
-func submitTestCandidate(t *testing.T, srv *httptest.Server, recordID, note string, tags []string) string {
+func submitTestCandidate(t *testing.T, srv *httptest.Server, recordID, note string, facets []string) string {
 	t.Helper()
-	body := `{"record_id":"` + recordID + `","original_timestamp":"2026-03-08T10:00:00Z","type":"note","tags":["` +
-		strings.Join(tags, `","`) + `"],"data":{"note":"` + note + `"}}`
+	body := `{"rec_id":"` + recordID + `","orig_ts":"2026-03-08T10:00:00Z","type":"note","facets":{"topic":["` +
+		strings.Join(facets, `","`) + `"]},"d":{"note":"` + note + `"}}`
 	resp := postJSON(t, srv.URL+"/v1/candidates", body)
 	defer closeResponseBody(t, resp)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)

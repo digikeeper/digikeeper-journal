@@ -14,7 +14,7 @@ import (
 func TestPostRecord(t *testing.T) {
 	srv := setupTestServer(t)
 
-	body := `{"type":"note","timestamp":"2026-03-08T10:00:00Z","tags":["work"],"data":{"note":"test"}}`
+	body := `{"type":"note","ts":"2026-03-08T10:00:00Z","facets":{"topic":["work"]},"d":{"note":"test"}}`
 	// act
 	resp := postJSON(t, srv.URL+"/v1/journal", body)
 	defer closeResponseBody(t, resp)
@@ -30,12 +30,21 @@ func TestPostRecord(t *testing.T) {
 	assert.NotEmpty(t, got.Data.ID)
 	assert.Equal(t, "note", got.Data.Attributes.Type)
 	assert.Equal(t, "2026-03-08T10:00:00Z", got.Data.Attributes.Timestamp)
-	assert.Equal(t, []string{"work"}, got.Data.Attributes.Tags)
+	assert.Equal(t, []string{"work"}, got.Data.Attributes.Facets["topic"])
 	assert.Equal(t, "test", got.Data.Attributes.Data["note"])
 	assert.Equal(t, 1, got.Data.Attributes.Meta.SchemaVersion)
 	assert.Equal(t, 1, got.Data.Attributes.Meta.Revision)
 	assert.Equal(t, "", got.Data.Attributes.Meta.Source)
 	assert.NotEmpty(t, got.Data.Attributes.CreatedAt)
+}
+
+func TestAppendRejectsDataThatViolatesLoadedSchema(t *testing.T) {
+	srv := setupTestServer(t)
+
+	resp := postJSON(t, srv.URL+"/v1/journal", `{"type":"note","ts":"2026-03-08T10:00:00Z","facets":{},"d":{}}`)
+	defer closeResponseBody(t, resp)
+
+	assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
 }
 
 func TestResolveCandidatesValidationErrors(t *testing.T) {
@@ -60,7 +69,7 @@ func TestSubmitCandidateForMissingRecord(t *testing.T) {
 	srv := setupTestServer(t)
 
 	resp := postJSON(t, srv.URL+"/v1/candidates",
-		`{"record_id":"missing","original_timestamp":"2026-03-08T10:00:00Z","type":"note","tags":["corrected"],"data":{"note":"corrected"}}`)
+		`{"rec_id":"missing","orig_ts":"2026-03-08T10:00:00Z","type":"note","facets":{"topic":["corrected"]},"d":{"note":"corrected"}}`)
 	defer closeResponseBody(t, resp)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
@@ -68,7 +77,7 @@ func TestSubmitCandidateForMissingRecord(t *testing.T) {
 func TestAppendWithClientID(t *testing.T) {
 	srv := setupTestServer(t)
 
-	body := `{"type":"note","timestamp":"2026-03-08T10:00:00Z","tags":["work"],"data":{"note":"test"}}`
+	body := `{"type":"note","ts":"2026-03-08T10:00:00Z","facets":{"topic":["work"]},"d":{"note":"test"}}`
 
 	tests := []struct {
 		name       string
@@ -103,7 +112,7 @@ func TestAppendWithClientID(t *testing.T) {
 func TestAppendPassesRequestID(t *testing.T) {
 	srv := setupTestServer(t)
 
-	body := `{"type":"note","timestamp":"2026-03-08T10:00:00Z","tags":["work"],"data":{"note":"test"}}`
+	body := `{"type":"note","ts":"2026-03-08T10:00:00Z","facets":{"topic":["work"]},"d":{"note":"test"}}`
 	req := newTestRequest(t, http.MethodPost, srv.URL+"/v1/journal", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-ID", "test-req-123")
@@ -121,7 +130,7 @@ func TestAppendPassesRequestID(t *testing.T) {
 func TestAppendGeneratesRequestIDWhenMissing(t *testing.T) {
 	srv := setupTestServer(t)
 
-	body := `{"type":"note","timestamp":"2026-03-08T10:00:00Z","tags":["work"],"data":{"note":"test"}}`
+	body := `{"type":"note","ts":"2026-03-08T10:00:00Z","facets":{"topic":["work"]},"d":{"note":"test"}}`
 	resp := postJSON(t, srv.URL+"/v1/journal", body)
 	defer closeResponseBody(t, resp)
 
@@ -148,16 +157,11 @@ func TestSchemaRegistryListSchemas(t *testing.T) {
 		} `json:"schemas"`
 	}
 	require.NoError(t, jsonx.UnmarshalRead(resp.Body, &got))
-	require.Len(t, got.Schemas, 2)
+	require.Len(t, got.Schemas, 1)
 
-	// Types are served in sorted order.
-	assert.Equal(t, "health", got.Schemas[0].Type)
+	assert.Equal(t, "note", got.Schemas[0].Type)
 	assert.Equal(t, 1, got.Schemas[0].LatestVersion)
 	assert.Equal(t, []int{1}, got.Schemas[0].Versions)
-
-	assert.Equal(t, "note", got.Schemas[1].Type)
-	assert.Equal(t, 1, got.Schemas[1].LatestVersion)
-	assert.Equal(t, []int{1}, got.Schemas[1].Versions)
 }
 
 func TestSchemaRegistryGetSchema(t *testing.T) {
@@ -177,7 +181,7 @@ func TestSchemaRegistryGetSchema(t *testing.T) {
 	require.NoError(t, jsonx.UnmarshalRead(resp.Body, &got))
 	assert.Equal(t, "note", got.Type)
 	assert.Equal(t, 1, got.Version)
-	assert.Contains(t, got.Instructions, "type: note")
+	assert.Contains(t, got.Instructions, "Test note")
 }
 
 func TestSchemaRegistryGetSchemaVersion(t *testing.T) {

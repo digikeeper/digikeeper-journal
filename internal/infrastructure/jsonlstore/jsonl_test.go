@@ -14,9 +14,9 @@ import (
 
 func testRecords() []core.Record {
 	return []core.Record{
-		{ID: "1", Timestamp: march1At(10), Tags: []string{"work"}, Data: map[string]any{"note": "morning standup"}},
-		{ID: "2", Timestamp: march1At(14), Tags: []string{"work", "meeting"}, Data: map[string]any{"note": "sprint review"}},
-		{ID: "3", Timestamp: march1At(20), Tags: []string{"personal"}, Data: map[string]any{"note": "gym"}},
+		{ID: "1", Timestamp: march1At(10), Facets: map[string][]string{"tag": {"work"}}, Data: map[string]any{"note": "morning standup"}},
+		{ID: "2", Timestamp: march1At(14), Facets: map[string][]string{"tag": {"work", "meeting"}}, Data: map[string]any{"note": "sprint review"}},
+		{ID: "3", Timestamp: march1At(20), Facets: map[string][]string{"tag": {"personal"}}, Data: map[string]any{"note": "gym"}},
 	}
 }
 
@@ -59,13 +59,13 @@ func TestRead_Filters(t *testing.T) {
 			wantIDs: []string{"1", "2", "3"},
 		},
 		{
-			name:    "tag matches multiple records",
-			opts:    []ReadOption{WithTags("work")},
+			name:    "facet matches multiple records",
+			opts:    []ReadOption{WithFacets(map[string][]string{"tag": {"work"}})},
 			wantIDs: []string{"1", "2"},
 		},
 		{
-			name:    "tag has no match",
-			opts:    []ReadOption{WithTags("travel")},
+			name:    "facet has no match",
+			opts:    []ReadOption{WithFacets(map[string][]string{"tag": {"travel"}})},
 			wantIDs: []string{},
 		},
 		{
@@ -85,7 +85,7 @@ func TestRead_Filters(t *testing.T) {
 		},
 		{
 			name:    "combined filters",
-			opts:    []ReadOption{WithTags("work"), WithTimeRange(march1At(12), march1At(23))},
+			opts:    []ReadOption{WithFacets(map[string][]string{"tag": {"work"}}), WithTimeRange(march1At(12), march1At(23))},
 			wantIDs: []string{"2"},
 		},
 	}
@@ -132,28 +132,28 @@ func TestRead_EmptyFile(t *testing.T) {
 	assert.Empty(t, records)
 }
 
-func TestMatchFilters_TagEdges(t *testing.T) {
+func TestMatchFilters_FacetEdges(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		line []byte
-		tags map[string]struct{}
+		name   string
+		line   []byte
+		facets map[string][]string
 	}{
 		{
-			name: "tag value inside data is ignored",
-			line: []byte(`{"tags":["a"],"ts":"2026-03-01T10:00:00Z","d":{"note":"meeting"}}`),
-			tags: map[string]struct{}{"meeting": {}},
+			name:   "facet value inside data is ignored",
+			line:   []byte(`{"facets":{"tag":["a"]},"ts":"2026-03-01T10:00:00Z","d":{"note":"meeting"}}`),
+			facets: map[string][]string{"tag": {"meeting"}},
 		},
 		{
-			name: "empty tags array does not match",
-			line: []byte(`{"tags":[],"ts":"2026-03-01T10:00:00Z"}`),
-			tags: map[string]struct{}{"work": {}},
+			name:   "empty facet array does not match",
+			line:   []byte(`{"facets":{"tag":[]},"ts":"2026-03-01T10:00:00Z"}`),
+			facets: map[string][]string{"tag": {"work"}},
 		},
 		{
-			name: "missing tags field does not match",
-			line: []byte(`{"ts":"2026-03-01T10:00:00Z","d":{}}`),
-			tags: map[string]struct{}{"work": {}},
+			name:   "missing facet key does not match",
+			line:   []byte(`{"ts":"2026-03-01T10:00:00Z","d":{}}`),
+			facets: map[string][]string{"tag": {"work"}},
 		},
 	}
 
@@ -161,7 +161,7 @@ func TestMatchFilters_TagEdges(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			f := &ReadFilters{Tags: tt.tags}
+			f := &ReadFilters{Facets: tt.facets}
 			assert.False(t, matchFilters(tt.line, f))
 		})
 	}

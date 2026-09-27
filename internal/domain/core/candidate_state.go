@@ -6,7 +6,7 @@ type CandidateState string
 const (
 	CandidatePending CandidateState = "pending"
 	CandidateApplied CandidateState = "applied"
-	CandidateDenied  CandidateState = "check go-waydenied"
+	CandidateDenied  CandidateState = "denied"
 )
 
 // CandidateStates lists every state a candidate can be in.
