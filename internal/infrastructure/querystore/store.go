@@ -12,25 +12,17 @@ import (
 )
 
 type Store struct {
+	dir      *storefs.Dir
 	rawStore *jsonlstore.JSONLWriter
 	idx      *index.Store
 }
 
-func NewStore(jsonJournalDir string, idx *index.Store) *Store {
-	return &Store{
-		rawStore: jsonlstore.NewJSONLWriter(jsonJournalDir, storefs.JournalKind),
-		idx:      idx,
-	}
+func NewStore(dir *storefs.Dir, idx *index.Store) *Store {
+	return &Store{dir: dir, rawStore: jsonlstore.NewJSONLWriter(dir.JournalDir(), storefs.JournalKind), idx: idx}
 }
 
-// Search satisfies query.MetaStorage.
 func (s *Store) Search(ctx context.Context, p model.SearchParams) ([]string, error) {
-	results, err := s.idx.Search(ctx, index.SearchParams{
-		Tags:  p.Tags,
-		Types: p.Types,
-		From:  p.From,
-		To:    p.To,
-	})
+	results, err := s.idx.Search(ctx, index.SearchParams{Facets: p.Facets, Types: p.Types, From: p.From, To: p.To})
 	if err != nil {
 		return nil, err
 	}
@@ -41,18 +33,25 @@ func (s *Store) Search(ctx context.Context, p model.SearchParams) ([]string, err
 	return keys, nil
 }
 
-// Read satisfies query.Storage.
+// Read takes the same shared data-directory lock as append readers, preventing
+// compaction from replacing a partition while JSONL is being scanned.
 func (s *Store) Read(ctx context.Context, keys []string) ([]core.Record, error) {
 	var records []core.Record
-	for _, key := range keys {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("store: read cancelled: %w", err)
+	err := s.dir.WithShared(ctx, func(_ storefs.Tx) error {
+		for _, key := range keys {
+			if err := ctx.Err(); err != nil {
+				return fmt.Errorf("store: read cancelled: %w", err)
+			}
+			fileRecords, err := s.rawStore.Read(key)
+			if err != nil {
+				return fmt.Errorf("store: read %s: %w", key, err)
+			}
+			records = append(records, fileRecords...)
 		}
-		fileRecords, err := s.rawStore.Read(key)
-		if err != nil {
-			return nil, fmt.Errorf("store: read %s: %w", key, err)
-		}
-		records = append(records, fileRecords...)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return records, nil
 }

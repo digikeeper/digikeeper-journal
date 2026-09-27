@@ -12,6 +12,7 @@ import (
 // On-disk names are unexported so callers cannot assemble paths independently.
 const (
 	journalDirName        = "dk_journal"
+	schemaDirName         = "schemas"
 	candidatesDirName     = "dk_candidates"
 	candidateAuditDirName = "candidateaudit"
 	indexFileName         = "index.db"

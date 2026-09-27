@@ -70,6 +70,32 @@ func TestFS_IsAValidFSAndStaysInsideTheTree(t *testing.T) {
 	require.Error(t, err, "os.Root must refuse to follow a symlink out of the tree")
 }
 
+func TestOpen_ReportsFirstRunOnlyForNewRoot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "journal")
+
+	first, err := storefs.Open(path)
+	require.NoError(t, err)
+	require.True(t, first.FirstRun())
+	require.NoError(t, first.Close())
+
+	reopened, err := storefs.Open(path)
+	require.NoError(t, err)
+	require.False(t, reopened.FirstRun())
+	require.NoError(t, reopened.Close())
+}
+
+func TestSchemaFS_ExposesSchemaTree(t *testing.T) {
+	dir := open(t)
+	root := dirPath(t, dir)
+	file := filepath.Join(root, "schemas", "note", "v1", "schema.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
+	require.NoError(t, os.WriteFile(file, []byte(`{}`), 0o644))
+
+	schemaFS, err := dir.SchemaFS()
+	require.NoError(t, err)
+	require.NoError(t, fstest.TestFS(schemaFS, "note/v1/schema.json"))
+}
+
 func dirPath(t *testing.T, d *storefs.Dir) string {
 	t.Helper()
 	// JournalDir is <root>/dk_journal; its parent is the root.

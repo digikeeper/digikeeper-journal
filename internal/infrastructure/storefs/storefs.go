@@ -18,17 +18,23 @@ import (
 
 // Dir is a safely opened data directory.
 type Dir struct {
-	path string
-	lock *flock.RWLock
-	root *os.Root
+	path     string
+	lock     *flock.RWLock
+	root     *os.Root
+	firstRun bool
 }
 
 // Open prepares the data directory at path, creating the trees it needs.
 // Close releases the directory handle it holds open.
 func Open(path string) (*Dir, error) {
-	d := &Dir{path: path, lock: flock.NewRWLock(filepath.Join(path, dataLockName))}
+	_, statErr := os.Stat(path)
+	firstRun := errors.Is(statErr, os.ErrNotExist)
+	if statErr != nil && !firstRun {
+		return nil, fmt.Errorf("storefs: stat root %s: %w", path, statErr)
+	}
+	d := &Dir{path: path, lock: flock.NewRWLock(filepath.Join(path, dataLockName)), firstRun: firstRun}
 
-	dirs := []string{d.JournalDir()}
+	dirs := []string{d.JournalDir(), d.SchemaDir()}
 	for _, dir := range candidateDirs() {
 		dirs = append(dirs, filepath.Join(d.CandidatesDir(), dir))
 	}
@@ -46,6 +52,10 @@ func Open(path string) (*Dir, error) {
 
 	return d, nil
 }
+
+// FirstRun reports whether Open created the data root. Existing, including empty,
+// roots are never treated as first runs.
+func (d *Dir) FirstRun() bool { return d.firstRun }
 
 // Close releases the directory handle. The lock is not held by it, so closing
 // does not disturb another process's transaction.
@@ -72,6 +82,18 @@ func (d *Dir) JournalDir() string { return filepath.Join(d.path, journalDirName)
 
 // CandidatesDir returns the candidate tree.
 func (d *Dir) CandidatesDir() string { return filepath.Join(d.path, candidatesDirName) }
+
+// SchemaDir returns the user-owned schema bundle tree.
+func (d *Dir) SchemaDir() string { return filepath.Join(d.path, schemaDirName) }
+
+// SchemaFS returns a rooted read-only filesystem for user-owned schema bundles.
+func (d *Dir) SchemaFS() (fs.FS, error) {
+	fsys, err := fs.Sub(d.FS(), schemaDirName)
+	if err != nil {
+		return nil, fmt.Errorf("storefs: open schema filesystem: %w", err)
+	}
+	return fsys, nil
+}
 
 // IndexPath returns the SQLite index. It is derived from the JSONL trees and
 // can be rebuilt from them, so it is never dumped.
