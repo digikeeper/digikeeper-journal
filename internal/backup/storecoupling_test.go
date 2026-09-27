@@ -60,7 +60,7 @@ func liveDataDir(t *testing.T) (*liveStores, func()) {
 				ID:        string(rune('a' + i)),
 				Timestamp: ts,
 				Type:      "note",
-				Tags:      []string{"t"},
+				Facets:    map[string][]string{"topic": {"t"}},
 				Data:      map[string]any{"n": i},
 			}))
 		}

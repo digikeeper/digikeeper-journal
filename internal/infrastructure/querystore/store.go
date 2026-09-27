@@ -12,12 +12,12 @@ import (
 )
 
 type Store struct {
-	dir      *storefs.Dir
+	dir      *storefs.Root
 	rawStore *jsonlstore.JSONLWriter
 	idx      *index.Store
 }
 
-func NewStore(dir *storefs.Dir, idx *index.Store) *Store {
+func NewStore(dir *storefs.Root, idx *index.Store) *Store {
 	return &Store{dir: dir, rawStore: jsonlstore.NewJSONLWriter(dir.JournalDir(), storefs.JournalKind), idx: idx}
 }
 

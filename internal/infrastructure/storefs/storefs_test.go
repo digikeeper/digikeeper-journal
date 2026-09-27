@@ -13,7 +13,7 @@ import (
 	"github.com/digikeeper/digikeeper-journal/internal/infrastructure/storefs"
 )
 
-func open(t *testing.T) *storefs.Dir {
+func open(t *testing.T) *storefs.Root {
 	t.Helper()
 	dir, err := storefs.Open(t.TempDir())
 	require.NoError(t, err)
@@ -96,7 +96,7 @@ func TestSchemaFS_ExposesSchemaTree(t *testing.T) {
 	require.NoError(t, fstest.TestFS(schemaFS, "note/v1/schema.json"))
 }
 
-func dirPath(t *testing.T, d *storefs.Dir) string {
+func dirPath(t *testing.T, d *storefs.Root) string {
 	t.Helper()
 	// JournalDir is <root>/dk_journal; its parent is the root.
 	return filepath.Dir(d.JournalDir())

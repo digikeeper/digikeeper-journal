@@ -16,8 +16,8 @@ import (
 	"github.com/digikeeper/digikeeper-journal/pkg/flock"
 )
 
-// Dir is a safely opened data directory.
-type Dir struct {
+// Root is a safely opened data root.
+type Root struct {
 	path     string
 	lock     *flock.RWLock
 	root     *os.Root
@@ -26,13 +26,13 @@ type Dir struct {
 
 // Open prepares the data directory at path, creating the trees it needs.
 // Close releases the directory handle it holds open.
-func Open(path string) (*Dir, error) {
+func Open(path string) (*Root, error) {
 	_, statErr := os.Stat(path)
 	firstRun := errors.Is(statErr, os.ErrNotExist)
 	if statErr != nil && !firstRun {
 		return nil, fmt.Errorf("storefs: stat root %s: %w", path, statErr)
 	}
-	d := &Dir{path: path, lock: flock.NewRWLock(filepath.Join(path, dataLockName)), firstRun: firstRun}
+	d := &Root{path: path, lock: flock.NewRWLock(filepath.Join(path, dataLockName)), firstRun: firstRun}
 
 	dirs := []string{d.JournalDir(), d.SchemaDir()}
 	for _, dir := range candidateDirs() {
@@ -55,11 +55,11 @@ func Open(path string) (*Dir, error) {
 
 // FirstRun reports whether Open created the data root. Existing, including empty,
 // roots are never treated as first runs.
-func (d *Dir) FirstRun() bool { return d.firstRun }
+func (d *Root) FirstRun() bool { return d.firstRun }
 
 // Close releases the directory handle. The lock is not held by it, so closing
 // does not disturb another process's transaction.
-func (d *Dir) Close() error {
+func (d *Root) Close() error {
 	if d.root == nil {
 		return nil
 	}
@@ -68,7 +68,7 @@ func (d *Dir) Close() error {
 
 // FS returns a read-only io/fs view of the directory.
 // It uses os.Root, which refuses symlinks that leave the data directory.
-func (d *Dir) FS() fs.FS {
+func (d *Root) FS() fs.FS {
 	return d.root.FS()
 }
 
@@ -78,16 +78,16 @@ func trees() []string {
 }
 
 // JournalDir returns the journal tree.
-func (d *Dir) JournalDir() string { return filepath.Join(d.path, journalDirName) }
+func (d *Root) JournalDir() string { return filepath.Join(d.path, journalDirName) }
 
 // CandidatesDir returns the candidate tree.
-func (d *Dir) CandidatesDir() string { return filepath.Join(d.path, candidatesDirName) }
+func (d *Root) CandidatesDir() string { return filepath.Join(d.path, candidatesDirName) }
 
 // SchemaDir returns the user-owned schema bundle tree.
-func (d *Dir) SchemaDir() string { return filepath.Join(d.path, schemaDirName) }
+func (d *Root) SchemaDir() string { return filepath.Join(d.path, schemaDirName) }
 
 // SchemaFS returns a rooted read-only filesystem for user-owned schema bundles.
-func (d *Dir) SchemaFS() (fs.FS, error) {
+func (d *Root) SchemaFS() (fs.FS, error) {
 	fsys, err := fs.Sub(d.FS(), schemaDirName)
 	if err != nil {
 		return nil, fmt.Errorf("storefs: open schema filesystem: %w", err)
@@ -97,19 +97,19 @@ func (d *Dir) SchemaFS() (fs.FS, error) {
 
 // IndexPath returns the SQLite index. It is derived from the JSONL trees and
 // can be rebuilt from them, so it is never dumped.
-func (d *Dir) IndexPath() string { return filepath.Join(d.path, indexFileName) }
+func (d *Root) IndexPath() string { return filepath.Join(d.path, indexFileName) }
 
 // ServerLockPath returns the lock held by a running server for directory ownership.
-func (d *Dir) ServerLockPath() string { return filepath.Join(d.path, serverLockName) }
+func (d *Root) ServerLockPath() string { return filepath.Join(d.path, serverLockName) }
 
 // JournalPath returns one journal partition's file.
-func (d *Dir) JournalPath(p core.Partition) string {
+func (d *Root) JournalPath(p core.Partition) string {
 	return filepath.Join(d.JournalDir(), filepath.FromSlash(JournalKey(p)))
 }
 
 // CandidatePath returns a partition's candidate file for the given state.
 // It returns an error when the state has no directory.
-func (d *Dir) CandidatePath(state core.CandidateState, p core.Partition) (string, error) {
+func (d *Root) CandidatePath(state core.CandidateState, p core.Partition) (string, error) {
 	dir, ok := CandidateDir(state)
 	if !ok {
 		return "", fmt.Errorf("storefs: no directory for candidate state %q", state)
@@ -118,12 +118,12 @@ func (d *Dir) CandidatePath(state core.CandidateState, p core.Partition) (string
 }
 
 // AuditPath returns one partition's candidate audit log.
-func (d *Dir) AuditPath(p core.Partition) string {
+func (d *Root) AuditPath(p core.Partition) string {
 	return filepath.Join(d.CandidatesDir(), filepath.FromSlash(auditKey(p)))
 }
 
 // Resolve turns a directory-relative key into an absolute path.
-func (d *Dir) Resolve(rel string) (string, error) {
+func (d *Root) Resolve(rel string) (string, error) {
 	// rel may come from a remote manifest, so reject names that could escape the tree.
 	if !fs.ValidPath(rel) {
 		return "", fmt.Errorf("storefs: %q: %w", rel, fs.ErrInvalid)
@@ -149,7 +149,7 @@ func (f File) InJournal() bool {
 
 // Files lists record files in sorted order, skipping locks and compaction
 // temporaries. It walks the rooted FS and returns directory-relative names.
-func (d *Dir) Files() ([]File, error) {
+func (d *Root) Files() ([]File, error) {
 	fsys := d.FS()
 
 	var files []File
@@ -185,7 +185,7 @@ func (d *Dir) Files() ([]File, error) {
 }
 
 // CompactTemps lists compaction temporaries left behind by a crash.
-func (d *Dir) CompactTemps() []string {
+func (d *Root) CompactTemps() []string {
 	matches, _ := filepath.Glob(filepath.Join(d.JournalDir(), "*", "*"+CompactTmpSuffix))
 	return matches
 }

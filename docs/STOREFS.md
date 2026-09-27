@@ -18,7 +18,7 @@ Nothing broke while every copy agreed — but a rename in the write path would h
 
 | | |
 |---|---|
-| `Open(path)` → `*Dir` | creates the trees, opens an `os.Root` handle; `Close` releases it |
+| `Open(path)` → `*Root` | creates the trees, opens an `os.Root` handle; `Close` releases it |
 | `WithShared(ctx, fn)` / `WithExclusive(ctx, fn)` | run `fn` under the directory's shared / exclusive lock, yielding a `Tx` / `WriteTx` (see [ARCHITECTURE.md § Locking](ARCHITECTURE.md#locking)) |
 | `Tx` / `WriteTx` | proof the lock is held, and the capability to read / rewrite. Closed interfaces: only this package can produce one, so a store method taking one cannot be called without the lock |
 | `Check(tx)` | the residual runtime check — that `tx` is live and belongs to *this* directory |

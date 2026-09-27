@@ -36,7 +36,7 @@ func CandidateDir(state core.CandidateState) (string, bool) {
 	}
 }
 
-// Extensions and suffixes shared by the JSONL layer and Root.CompactTemps.
+// Extensions and suffixes shared by the JSONL layer and storefs.Root.CompactTemps.
 const (
 	JSONLExt         = ".jsonl"
 	CompactTmpSuffix = ".compact.tmp"

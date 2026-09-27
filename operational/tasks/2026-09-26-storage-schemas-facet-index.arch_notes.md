@@ -2,7 +2,7 @@
 
 ## Architectural findings
 - `cmd/server/main.go` builds storage, index, services, then `schemaregistry.NewHandler()`; the handler currently embeds note/health schemas and checks JSON syntax only (`internal/httpapi/schemaregistry/handler.go`).
-- `storefs.Dir` owns data-directory names, a rooted read-only FS, and lock/transaction boundaries (`internal/infrastructure/storefs/storefs.go`, `names.go`); give schema files a storefs-owned tree.
+- `storefs.Root` owns data-directory names, a rooted read-only FS, and lock/transaction boundaries (`internal/infrastructure/storefs/storefs.go`, `names.go`); give schema files a storefs-owned tree.
 - Append hardcodes schema version 1 (`internal/domain/command/append/append.go`); candidate submission copies the original record then changes type/tags/data (`internal/domain/command/candidate/submit.go`). Neither consults the registry.
 - `commandstore.Append` updates SQLite after durable JSONL append. `index.Store` aggregates tags/types/time by file; query searches files then filters actual records. Compaction rewrites JSONL then calls `RebuildPartition` (`internal/domain/command/compaction/compact.go`).
 - `docs/SCHEMA_REGISTRY_HANDLERS.md` says published bundles include immutable instructions, though the current loader tolerates missing instructions. The new contract requires both.
