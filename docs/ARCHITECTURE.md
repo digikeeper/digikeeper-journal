@@ -2,25 +2,31 @@
 
 ## Overview
 Part of the Digikeeper project. An HTTP service for append-based personal records.
-It accepts records over a REST API, stores them durably in JSONL files (source of truth), and maintains a SQLite index for fast querying.
 
-Mutual exclusion for data changes is based on flock, which prevents concurrency at the OS-directory level.
+Technically:
+The service accepts records via a REST API, stores them durably in JSONL files (as the source of truth), and maintains a SQLite index for fast querying.
+It uses `flock` to control concurrency at the OS level, per directory.
+
+Adopted concepts and patterns:
+- Locks (bbolt-inspired)
+- CQS
+- Clean Architecture layering
 
 ## Locking
-One reader/writer lock per data directory (`dk.lock`), owned by `internal/infrastructure/storefs` alongside the on-disk names.
+The journal is personal storage: one user's records per instance. That's why stopping the world costs one person a pause.
+Therefore, there is one reader/writer lock per data directory (`dk.lock`), owned by `internal/infrastructure/storefs`.
 
-The journal is personal storage: one user's records per instance, scaled by running more instances. Stopping the world therefore costs one person a pause.
-
-- Appends and reads take it **shared** (`WithShared`) and run concurrently.
-- Rewrites — compaction, a backup dump, a restore — take it **exclusive** (`WithExclusive`).
+- Appends and reads take a **shared lock** (`WithShared`) and run concurrently.
+- Rewrites — compaction, a backup dump, a restore — take an **exclusive lock** (`WithExclusive`).
+- A transaction is the lock made visible in code: holding one is the proof that the lock is held, and its lifetime is the lock's lifetime.
 - Nothing nests: code inside a transaction must not open another.
-- Compaction acquires the journal partition and then the candidate partition — any future code acquiring them in the other order will deadlock.
+- Lock acquisition has an order: lock the journal partition first, then the candidate partition. This is required to avoid deadlocks.
 
-It is a file lock because it has to hold across processes: `dkbackup` quiesces a running server with it. `server.lock` is separate and marks process ownership of the directory for its lifetime.
+We use a file lock because it has to hold across processes: `dkbackup` quiesces a running server with it.
 
-### Services open a transaction, stores require one
+### Lock acquiring
 
-The lock is taken by the **domain service**, never by the store it calls. `storefs` exposes it the way `bbolt` does:
+The lock should be acquired by the **domain service**, never by the store it calls. `storefs` exposes it the way `bbolt` does:
 
 ```go
 err := s.lock.WithExclusive(ctx, func(tx storefs.WriteTx) error {   // exclusive
@@ -30,7 +36,8 @@ err := s.lock.WithExclusive(ctx, func(tx storefs.WriteTx) error {   // exclusive
 })
 ```
 
-`WithShared` yields a `storefs.Tx`, `WithExclusive` a `storefs.WriteTx`. Both interfaces have an unexported method, so only `storefs` can produce one: a store method that takes a `Tx` **cannot be called without the lock**, and one taking a `WriteTx` cannot be handed what `WithShared` yielded. The requirement is in the signature, and getting it wrong does not compile.
+`WithShared` yields a `storefs.Tx`, `WithExclusive` a `storefs.WriteTx`.
+Only `storefs` can produce a transaction, so the compiler enforces the locking rules: a store method that takes a transaction **cannot be called without the lock**, and one that needs a write transaction cannot run under a shared lock.
 
 It is a transaction because only the service knows where the span begins.
 
@@ -47,7 +54,7 @@ Keeping the guard in `ctx` would have stores assert it. That is the case the `co
 
 #### Why not optimistic concurrency
 
-Optimistic control needs the storage layer to offer a conditional write — S3's `If-Match`, GCS's `ifGenerationMatch`. A local filesystem has no mediator and POSIX has no conditional rename, so there is no way to say "swap this partition only if nobody appended since I read it". The only atomic CAS a filesystem offers is create-exclusive. Checked solutions: Delta Lake, Iceberg, S3.
+Optimistic control needs the storage layer to offer a conditional write — S3's `If-Match`, GCS's `ifGenerationMatch`. A local filesystem has no mediator and POSIX has no conditional rename, so there is no way to say "swap this partition only if nobody appended since I read it". The only atomic CAS a filesystem offers is create-exclusive. Solutions reviewed: Delta Lake, Iceberg, S3.
 
 The record layer *is* optimistic, and stays so: `applyCandidate` compare-and-swaps on `Meta.Revision`, which makes compaction idempotent.
 
@@ -74,7 +81,7 @@ internal/httpapi/*                ← parse, validate, respond
 internal/domain/{command,query}   ← business logic, owns interfaces
 internal/infrastructure/*         ← storage, indexing, and external adapters
 ```
-Dependencies flow inward. Interfaces defined at the usage-model-level.
+Dependencies flow inward. Interfaces are defined at the usage-model level.
 
 ## Handler Segregation
 
@@ -84,7 +91,7 @@ Shared utilities (`response.go`, `errors.go`, `middleware.go`) are kept at the `
 
 ## Infrastructure Split
 
-`internal/infrastructure/` contains focused packages rather than one facade:
+`internal/infrastructure/` contains focused packages rather than one facade.
 Each package maps one technical capability to the domain interfaces that use it.
 
 | Package        | Role |
@@ -122,7 +129,7 @@ Domain enums drive storage names:
 - `expvar`: `records_appended`, `sqlite_index_latency_ms` at `/debug/vars`
 
 ## API Convention
-The API follows the main guidelines of [JSON:API](https://jsonapi.org/) specification.
+The API follows the main guidelines of the [JSON:API](https://jsonapi.org/) specification.
 Before making API design decisions, consult the spec and its addendums first.
 
 ## See Also

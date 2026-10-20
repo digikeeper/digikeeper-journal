@@ -3,7 +3,7 @@
 ## Short description
 
 `cmd/dkbackup` dumps the journal to a remote, and restores it (with index preps).
-The backup is incremental,so it stays cheap to keep running over years.
+The backup is incremental, so it stays cheap to keep running over years.
 
 It is a crucial part of this repository: providers disappear, prices change, and data deserves more than one copy.
 This system is long-lived and runs with no SRE involved.
@@ -59,9 +59,8 @@ The `data/` prefix is part of the versioned remote format. A future layout chang
 
 ## Restore
 
-Restore takes the data directory's **exclusive** lock for its whole run. 
-It checks each file against the hash in the manifest and installs it atomically through `storefs.ReplaceFile`
-. Files already present with that hash are skipped, so an interrupted restore resumes cheaply. The names in the manifest come from the remote, so they are validated before use — see STOREFS.md.
+Restore takes the data directory's **exclusive** lock for its whole run.
+It checks each file against the hash in the manifest and installs it atomically through `storefs.ReplaceFile`. Files already present with that hash are skipped, so an interrupted restore resumes cheaply. The names in the manifest come from the remote, so they are validated before use — see STOREFS.md.
 
 The SQLite index is not restored. Rebuilding it lives in `internal/infrastructure/index/reindex`, beside the index it rebuilds; `dkbackup reindex` is the entry point that drives it.
 
