@@ -160,7 +160,7 @@ func buildBenchData(b *testing.B) benchData {
 		ID: "bench-record",
 		Meta: core.RecordMeta{
 			SchemaVersion: 1,
-			Src:           1,
+			Source:        1,
 		},
 		RequestID: "bench-request",
 		CreatedAt: ts.Add(15 * time.Second),
