@@ -15,6 +15,7 @@ import (
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
+	"github.com/digikeeper/digikeeper-journal/internal/jsonx"
 )
 
 //go:embed schema_for_schemas.json
@@ -100,7 +101,7 @@ func Load(fsys fs.FS) (*Registry, error) {
 				return nil, fmt.Errorf("instructions %s: %w", path.Join(base, "instructions.md"), err)
 			}
 			var document map[string]any
-			if err := json.Unmarshal(raw, &document); err != nil {
+			if err := jsonx.Unmarshal(raw, &document); err != nil {
 				return nil, fmt.Errorf("schema %s is not valid JSON: %w", base, err)
 			}
 			if err := metaSchema.Validate(document); err != nil {
@@ -155,7 +156,7 @@ func loadMetaSchema() (*jsonschema.Schema, error) {
 		return nil, fmt.Errorf("read embedded schema-for-schemas: %w", err)
 	}
 	var document map[string]any
-	if err := json.Unmarshal(raw, &document); err != nil {
+	if err := jsonx.Unmarshal(raw, &document); err != nil {
 		return nil, fmt.Errorf("parse embedded schema-for-schemas: %w", err)
 	}
 	compiler := newCompiler()
@@ -224,12 +225,12 @@ func (r *Registry) Validate(typeName string, version int, record core.Record) er
 	if record.Type != typeName {
 		return fmt.Errorf("record type %q does not match selected type %q: %w", record.Type, typeName, ErrInvalidRecord)
 	}
-	raw, err := json.Marshal(record)
+	raw, err := jsonx.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("marshal record: %w", err)
 	}
 	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := jsonx.Unmarshal(raw, &value); err != nil {
 		return fmt.Errorf("decode record: %w", err)
 	}
 	if err := doc.compiled.Validate(value); err != nil {

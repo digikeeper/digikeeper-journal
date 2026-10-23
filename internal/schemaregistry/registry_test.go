@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/digikeeper/digikeeper-journal/internal/domain/core"
+	"github.com/digikeeper/digikeeper-journal/internal/jsonx"
 )
 
 func TestLoadCompilesDraft2020SchemaAndValidatesRecord(t *testing.T) {
@@ -32,6 +33,24 @@ func TestLoadCompilesDraft2020SchemaAndValidatesRecord(t *testing.T) {
 	}))
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrInvalidRecord))
+}
+
+// Validate must see the bytes storage writes: jsonx encodes a nil facet slice
+// as [], so the schema has to judge [] rather than null.
+func TestValidateMatchesStoredEncoding(t *testing.T) {
+	t.Parallel()
+
+	registry, err := Load(testSchemaFS(t, draft2020Schema))
+	require.NoError(t, err)
+
+	record := validRecord(map[string]any{"note": "journal", "kind": "note", "occurred": "2026-03-08T10:00:00Z"})
+	record.Facets = map[string][]string{"topic": nil}
+
+	stored, err := jsonx.Marshal(record)
+	require.NoError(t, err)
+	require.Contains(t, string(stored), `"facets":{"topic":[]}`)
+
+	require.NoError(t, registry.Validate("note", 1, record))
 }
 
 func TestLoadRejectsSchemaThatCannotCompile(t *testing.T) {
